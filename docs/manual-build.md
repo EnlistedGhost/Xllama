@@ -51,62 +51,67 @@ go build -o ollama .
 
 ### Step 1: GCC 10 Installation
 
-#### Why Install GCC 10 First?
+**Why Install GCC 10 First?**
 
-**GCC 10 is required for:**
+GCC 10 is required for:
 - Compiling the custom Linux kernel (Step 2)
-- Building ollama37 from source (Step 6)
+- Building ollama37 from source (Step 7)
 - CUDA 11.4 compatibility (CUDA 11.4 nvcc is not compatible with GCC 11.5+)
 
-**Rocky Linux 9** ships with GCC 11.5 by default, which is:
+Rocky Linux 9 ships with GCC 11.5 by default, which is:
 - ❌ **Incompatible** with CUDA 11.4 nvcc compiler
 - ❌ **Not recommended** for kernel compilation with NVIDIA drivers
-- ✅ **Sufficient** for running pre-built binaries (if you skip Steps 2 and 6)
+- ✅ **Sufficient** for running pre-built binaries (if you skip Steps 2 and 7)
 
-#### Installation Steps
+**Prerequisites:**
+- Rocky Linux 9
+- Root privileges
+- Internet connectivity
 
-**Complete installation script:**
-```bash
-# Install prerequisites
-dnf -y groupinstall "Development Tools"
+**Steps:**
 
-# Download and extract GCC 10 source
-cd /usr/local/src
-wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip
-unzip gcc-10.zip
-cd gcc-releases-gcc-10
+1. **Complete installation script:**
+    ```bash
+    # Install prerequisites
+    dnf -y groupinstall "Development Tools"
 
-# Download GCC prerequisites (GMP, MPFR, MPC, ISL)
-contrib/download_prerequisites
+    # Download and extract GCC 10 source
+    cd /usr/local/src
+    wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip
+    unzip gcc-10.zip
+    cd gcc-releases-gcc-10
 
-# Create build directory and configure
-mkdir /usr/local/gcc-10
-cd /usr/local/gcc-10
-/usr/local/src/gcc-releases-gcc-10/configure --disable-multilib
+    # Download GCC prerequisites (GMP, MPFR, MPC, ISL)
+    contrib/download_prerequisites
 
-# Compile and install (1-2 hours depending on CPU)
-make -j $(nproc)
-make install
-```
+    # Create build directory and configure
+    mkdir /usr/local/gcc-10
+    cd /usr/local/gcc-10
+    /usr/local/src/gcc-releases-gcc-10/configure --disable-multilib
 
-> **Note**: The compilation step `make -j $(nproc)` will take 1-2 hours depending on your CPU performance. The `$(nproc)` command uses all available CPU cores to speed up compilation.
+    # Compile and install (1-2 hours depending on CPU)
+    make -j $(nproc)
+    make install
+    ```
 
-**Post-Install Configuration:**
-```bash
-# Configure dynamic linker to include both system and GCC 10 library paths
-cat > /etc/ld.so.conf.d/gcc-10.conf << 'EOF'
-/usr/lib64
-/usr/local/lib64
-EOF
+   > **Note**: The compilation step `make -j $(nproc)` will take 1-2 hours depending on your CPU performance. The `$(nproc)` command uses all available CPU cores to speed up compilation.
 
-ldconfig
+2. **Post-Install Configuration:**
+   ```bash
+    # Configure dynamic linker to include both system and GCC 10 library paths
+    cat > /etc/ld.so.conf.d/gcc-10.conf << 'EOF'
+    /usr/lib64
+    /usr/local/lib64
+    EOF
 
-# Update system compiler symlinks to use GCC 10
-rm -f /usr/bin/cc
-ln -s /usr/local/bin/gcc /usr/bin/cc
-```
+    ldconfig
 
-**Verify Installation:**
+    # Update system compiler symlinks to use GCC 10
+    rm -f /usr/bin/cc
+    ln -s /usr/local/bin/gcc /usr/bin/cc
+   ```
+
+### Verification:
 ```bash
 # Verify GCC 10 installation
 gcc --version
@@ -127,66 +132,60 @@ ls -al /usr/bin/cc
 
 ### Step 2: Kernel Compilation (Required for NVIDIA 470 Compatibility)
 
-#### Why Compile a Custom Kernel?
+**Why Compile a Custom Kernel?**
 
-Recent kernel updates in Rocky Linux 9, Fedora, and Ubuntu have **broken compatibility** with:
+Recent kernel updates in Rocky Linux 9, Fedora, and Ubuntu have broken compatibility with:
 - NVIDIA Driver 470 (required for Tesla K80 / Compute Capability 3.7)
 - CUDA 11.4 nvcc compiler
 
-**Solution**: Use Linux kernel 5.14.x, which maintains stable NVIDIA 470 driver support.
+Solution: Use Linux kernel 5.14.x, which maintains stable NVIDIA 470 driver support.
 
-#### Prerequisites
-
-**System Requirements:**
+**Prerequisites:**
 - Rocky Linux 9 (clean installation recommended)
 - Root privileges
 - At least 20GB free disk space
 - Stable internet connection
 
-**Install Build Tools:**
-```bash
-dnf -y groupinstall "Development Tools"
-dnf -y install ncurses-devel
-```
+**Steps:**
 
-#### Download Kernel Source
+1. **Install build tools:**
+   ```bash
+   dnf -y groupinstall "Development Tools"
+   dnf -y install ncurses-devel
+   ```
 
-1. **Navigate to source directory:**
+2. **Navigate to source directory:**
    ```bash
    cd /usr/src/kernels
    ```
 
-2. **Download Linux 5.14.x kernel:**
+3. **Download Linux 5.14.x kernel:**
    ```bash
    wget https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.14.tar.xz
    ```
 
    > **Note**: Check [kernel.org](https://www.kernel.org/pub/linux/kernel/v5.x/) for the latest 5.14.x stable release.
 
-3. **Extract the archive:**
+4. **Extract the archive:**
    ```bash
    tar xvf linux-5.14.tar.xz
    cd linux-5.14
    ```
 
-#### Configure Kernel
-
-1. **Copy existing kernel configuration:**
+5. **Copy existing kernel configuration:**
    ```bash
-   # First, check available kernel configurations
-   ls /usr/src/kernels
-
-   # Copy config from the running kernel (adjust version as needed)
-   # Example: cp /usr/src/kernels/5.14.0-570.52.1.el9_6.x86_64/.config .config
+   # Copy config from the running kernel
    cp /usr/src/kernels/$(uname -r)/.config .config
    ```
 
-2. **Open menuconfig to adjust settings:**
+   > **Note**: If you need to check available kernel configurations first: `ls /usr/src/kernels`
+
+6. **Open menuconfig to adjust settings:**
    ```bash
    make menuconfig
    ```
 
-3. **Required Configuration Changes:**
+7. **Required Configuration Changes:**
 
    Navigate and **DISABLE** the following options:
 
@@ -216,57 +215,52 @@ dnf -y install ncurses-devel
    > - Trusted keys: Conflicts with out-of-tree driver compilation
    > - BTF debug: Can cause build failures and is unnecessary for production use
 
-4. **Save configuration:**
+8. **Save configuration:**
    - Press `<Save>`
    - Confirm default filename `.config`
    - Press `<Exit>` to quit menuconfig
 
-#### Compile Kernel
-
-1. **Compile kernel (using all CPU cores):**
+9. **Compile kernel (using all CPU cores):**
    ```bash
    make -j$(nproc)
    ```
 
    > **Estimated time**: 30-60 minutes depending on CPU performance
 
-2. **Install kernel modules:**
-   ```bash
-   make modules_install
-   ```
+10. **Install kernel modules:**
+    ```bash
+    make modules_install
+    ```
 
-3. **Install kernel:**
-   ```bash
-   make install
-   ```
+11. **Install kernel:**
+    ```bash
+    make install
+    ```
 
-#### Reboot and Verify
+12. **Reboot system:**
+    ```bash
+    reboot
+    ```
 
-1. **Reboot system:**
-   ```bash
-   reboot
-   ```
+### Verification:
+```bash
+# After reboot, verify kernel version
+uname -r
+# Should output: 5.14.21
+```
 
-2. **After reboot, verify kernel version:**
-   ```bash
-   uname -r
-   # Should output: 5.14.21
-   ```
+### Troubleshooting:
 
-#### Troubleshooting Kernel Compilation
-
-**Issue: BTF-related build errors**
+#### Issue: BTF-related build errors
 ```
 BTF: .tmp_vmlinux.btf: pahole (pahole) is not available
 Failed to generate BTF for vmlinux
 ```
 
 **Solution:**
-- Disable `CONFIG_DEBUG_INFO_BTF` in menuconfig (see step 4c above)
+- Disable `CONFIG_DEBUG_INFO_BTF` in menuconfig (see step 7c above)
 
----
-
-**Issue: Module signing key errors**
+#### Issue: Module signing key errors
 ```
 Can't read private key
 ```
@@ -301,7 +295,7 @@ Can't read private key
    ```bash
    init 3
    ```
-   
+
    > **Note**: This will exit the graphical interface. You'll need to log in via text console.
 
 4. **Download NVIDIA Driver 470.256.02:**
@@ -315,7 +309,7 @@ Can't read private key
    chmod +x NVIDIA-Linux-x86_64-470.256.02.run
    sh NVIDIA-Linux-x86_64-470.256.02.run
    ```
-   
+
    > **Installation prompts:**
    > - Accept the license agreement
    > - If asked about DKMS, select "Yes" to register with DKMS
@@ -327,7 +321,7 @@ Can't read private key
    reboot
    ```
 
-**Verification:**
+### Verification:
 ```bash
 # Check driver and GPU
 nvidia-smi
@@ -354,7 +348,7 @@ nvidia-smi
    ```bash
    sh cuda_11.4.0_470.42.01_linux.run
    ```
-   
+
    > **Installation prompts:**
    > - Accept the license agreement
    > - **IMPORTANT**: Deselect "Driver" option (driver already installed in Step 3)
@@ -362,7 +356,7 @@ nvidia-smi
    > - Confirm installation
 
 3. **Set up CUDA Environment Variables:**
-   
+
    Create two configuration files:
 
    **a) PATH configuration in `/etc/profile.d/`:**
@@ -378,7 +372,7 @@ nvidia-smi
    ```
 
    **b) Dynamic linker configuration:**
-   
+
    The CUDA installer creates `/etc/ld.so.conf.d/cuda-11-4.conf` automatically with the following content:
    ```
    /usr/local/cuda-11.4/lib64
@@ -396,7 +390,7 @@ nvidia-smi
    ldconfig
    ```
 
-**Verification:**
+### Verification:
 ```bash
 # Check CUDA compiler
 nvcc --version
@@ -410,6 +404,12 @@ nvidia-smi
 ---
 
 ### Step 5: CMake 4.0 Installation
+
+**Prerequisites:**
+- Root privileges
+- Internet connectivity
+
+**Steps:**
 
 1. **Install OpenSSL Development Libraries:**
    ```bash
@@ -448,15 +448,21 @@ nvidia-smi
    make install
    ```
 
-8. **Verify Installation:**
-   ```bash
-   cmake --version
-   # Should output: cmake version 4.0.0
-   ```
+### Verification:
+```bash
+cmake --version
+# Should output: cmake version 4.0.0
+```
 
 ---
 
 ### Step 6: Go 1.25.3 Installation
+
+**Prerequisites:**
+- Root privileges
+- Internet connectivity
+
+**Steps:**
 
 1. **Download Go Distribution:**
    ```bash
@@ -481,18 +487,17 @@ nvidia-smi
    source /etc/profile.d/go.conf
    ```
 
-4. **Verify Installation:**
-   ```bash
-   go version
-   # Should output: go version go1.25.3 linux/amd64
-   ```
+### Verification:
+```bash
+go version
+# Should output: go version go1.25.3 linux/amd64
+```
 
 ---
 
 ### Step 7: Ollama37 Compilation (Optional - For Custom Builds)
 
 **Prerequisites:**
-All components installed as per the guides above:
 - GCC 10 (from Step 1)
 - Rocky Linux 9 with custom kernel 5.14.x (from Step 2)
 - NVIDIA Driver 470 (from Step 3)
@@ -501,7 +506,7 @@ All components installed as per the guides above:
 - Go 1.25.3 (from Step 6)
 - Git
 
-**Compilation Steps:**
+**Steps:**
 
 1. **Navigate to Build Directory:**
    ```bash
@@ -534,152 +539,10 @@ All components installed as per the guides above:
    go build -o ollama .
    ```
 
-6. **Verification:**
-   ```bash
-   ./ollama --version
-   ```
-
-7. **Optional: Install System-Wide:**
-   ```bash
-   cp ollama /usr/local/bin/
-   cp -r lib/ollama /usr/local/lib/
-   ```
-
----
-
-## Tesla K80 Specific Optimizations
-
-The Ollama37 build includes several Tesla K80-specific optimizations:
-
-### CUDA Architecture Support
-- **CMake Configuration**: `CMAKE_CUDA_ARCHITECTURES "37;50;61;70;75;80"`
-- **Build Files**: Located in `ml/backend/ggml/ggml/src/ggml-cuda/CMakeLists.txt`
-
-### CUDA 11 Compatibility
-- Uses CUDA 11 toolchain (CUDA 12 dropped Compute Capability 3.7 support)
-- Environment variables configured for CUDA 11.4 paths
-- Driver version 470 for maximum compatibility
-
-### Performance Tuning
-- Optimized memory management for Tesla K80's 12GB VRAM
-- Kernel optimizations for Kepler architecture
-- Reduced precision operations where appropriate
-- Enhanced VMM pool with granularity alignment
-- Progressive memory allocation fallback (4GB → 2GB → 1GB → 512MB)
-
----
-
-## Troubleshooting
-
-### NVIDIA Driver Issues
-
-**Issue: nvidia-smi shows "Failed to initialize NVML"**
-
-**Solution:**
+### Verification:
 ```bash
-# Check if driver is loaded
-lsmod | grep nvidia
-
-# If not loaded, load manually
-modprobe nvidia
-
-# Check dmesg for errors
-dmesg | grep -i nvidia
+./ollama --help
 ```
-
----
-
-**Issue: Driver loads but CUDA version mismatch**
-
-**Solution:**
-```bash
-# Check CUDA version
-nvcc --version
-
-# Check driver CUDA support
-nvidia-smi
-
-# Ensure PATH points to CUDA 11.4
-echo $PATH | grep cuda-11.4
-```
-
----
-
-### CUDA Compilation Issues
-
-**Issue: nvcc not found**
-
-**Solution:**
-```bash
-# Check if CUDA is in PATH
-which nvcc
-
-# If not, source environment
-source /etc/profile.d/cuda-11.4.sh
-
-# Verify
-nvcc --version
-```
-
----
-
-**Issue: "nvcc fatal: Unsupported gpu architecture 'compute_37'"**
-
-**Solution:**
-This error means you're using CUDA 12 instead of CUDA 11.4. Ensure:
-```bash
-# Check CUDA version
-nvcc --version
-# Must show CUDA 11.4
-
-# If wrong version, check PATH
-echo $PATH
-# Should include /usr/local/cuda-11.4/bin BEFORE any other CUDA paths
-```
-
----
-
-### GCC Version Issues
-
-**Issue: CMake can't find GCC 10**
-
-**Solution:**
-```bash
-# Check GCC version
-/usr/local/bin/gcc --version
-# Should show GCC 10.x
-
-# If build fails, explicitly set CC and CXX
-export CC=/usr/local/bin/gcc
-export CXX=/usr/local/bin/g++
-```
-
----
-
-**Issue: CUDA compilation fails with GCC 11 errors**
-
-**Solution:**
-```bash
-# CUDA 11.4 is not compatible with GCC 11+
-# You MUST use GCC 10 for compilation
-# Ensure you've installed GCC 10 (Step 1)
-
-# Verify compiler paths
-which gcc  # Should point to /usr/local/bin/gcc
-gcc --version  # Should show 10.x
-```
-
----
-
-### Memory Issues
-
-**Issue: Out of memory during model loading**
-
-**Solution:**
-- Tesla K80 has 12GB VRAM per GPU
-- Use quantized models (Q4_0, Q8_0) for better memory efficiency
-- Reduce context length: `ollama run model --num-ctx 2048`
-- Monitor GPU memory: `watch -n 1 nvidia-smi`
 
 ---
 
@@ -700,16 +563,6 @@ After successful compilation, verify Tesla K80 support:
 # Monitor GPU utilization
 watch -n 1 nvidia-smi
 ```
-
----
-
-## Performance Optimization Tips
-
-1. **Model Selection**: Use quantized models (Q4_0, Q8_0) for better performance on Tesla K80
-2. **Memory Management**: Monitor VRAM usage and adjust context sizes accordingly
-3. **Temperature Control**: Ensure adequate cooling for sustained workloads
-4. **Power Management**: Tesla K80 requires proper power delivery (225W per GPU)
-5. **Multi-GPU**: For dual K80 setups, use `CUDA_VISIBLE_DEVICES=0,1` to leverage both GPUs
 
 ---
 
