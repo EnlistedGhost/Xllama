@@ -1,0 +1,28 @@
+# Exclude documentation
+*.md
+README.md
+
+# Exclude builder files
+../builder/
+
+# Exclude volume data
+../volume/
+
+# Exclude docker-compose
+../docker-compose.yml
+
+# Exclude git
+.git/
+.gitignore
+.gitattributes
+
+# Exclude editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Exclude OS files
+.DS_Store
+Thumbs.db
