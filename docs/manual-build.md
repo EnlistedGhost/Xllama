@@ -444,74 +444,55 @@ EOF
 
 #### Installation Steps
 
-1. **Update and Install Prerequisites:**
-   ```bash
-   dnf -y install wget unzip lbzip2
-   dnf -y groupinstall "Development Tools"
-   ```
+**Complete installation script:**
+```bash
+# Install prerequisites
+dnf -y install wget unzip lbzip2
+dnf -y groupinstall "Development Tools"
 
-2. **Download GCC 10 Source Code:**
-   ```bash
-   cd /usr/local/src
-   wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip
-   ```
+# Download and extract GCC 10 source
+cd /usr/local/src
+wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip
+unzip gcc-10.zip
+cd gcc-releases-gcc-10
 
-3. **Extract Source Code:**
-   ```bash
-   unzip gcc-10.zip
-   cd gcc-releases-gcc-10
-   ```
+# Download GCC prerequisites (GMP, MPFR, MPC, ISL)
+contrib/download_prerequisites
 
-4. **Download Prerequisites:**
-   ```bash
-   contrib/download_prerequisites
-   ```
+# Create build directory and configure
+mkdir /usr/local/gcc-10
+cd /usr/local/gcc-10
+/usr/local/src/gcc-releases-gcc-10/configure --disable-multilib
 
-5. **Create Installation Directory:**
-   ```bash
-   mkdir /usr/local/gcc-10
-   ```
+# Compile and install (1-2 hours depending on CPU)
+make -j $(nproc)
+make install
+```
 
-6. **Configure GCC Build:**
-   ```bash
-   cd /usr/local/gcc-10
-   /usr/local/src/gcc-releases-gcc-10/configure --disable-multilib
-   ```
+> **Note**: The compilation step `make -j $(nproc)` will take 1-2 hours depending on your CPU performance. The `$(nproc)` command uses all available CPU cores to speed up compilation.
 
-7. **Compile GCC:**
-   ```bash
-   make -j $(nproc)
-   ```
-
-   > **Estimated time**: 1-2 hours depending on CPU performance
-
-8. **Install GCC:**
-   ```bash
-   make install
-   ```
-
-9. **Post-Install Configuration:**
-   ```bash
-   # Create environment script
-   cat > /etc/profile.d/gcc-10.sh << 'EOF'
+**Post-Install Configuration:**
+```bash
+# Create environment script for library paths
+cat > /etc/profile.d/gcc-10.sh << 'EOF'
 #!/bin/sh
 # gcc-10.sh - GCC 10 library path configuration
 export LD_LIBRARY_PATH=/usr/local/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 EOF
 
-   # Configure dynamic linker
-   echo "/usr/local/lib64" > /etc/ld.so.conf.d/gcc-10.conf
-   ldconfig
-   ```
+# Configure dynamic linker
+echo "/usr/local/lib64" > /etc/ld.so.conf.d/gcc-10.conf
+ldconfig
+```
 
-10. **Verify Installation:**
-    ```bash
-    /usr/local/bin/gcc --version
-    # Should output: gcc (GCC) 10.x.x
+**Verify Installation:**
+```bash
+/usr/local/bin/gcc --version
+# Should output: gcc (GCC) 10.x.x
 
-    /usr/local/bin/g++ --version
-    # Should output: g++ (GCC) 10.x.x
-    ```
+/usr/local/bin/g++ --version
+# Should output: g++ (GCC) 10.x.x
+```
 
 ---
 
