@@ -99,15 +99,30 @@ cat > /etc/ld.so.conf.d/gcc-10.conf << 'EOF'
 EOF
 
 ldconfig
+
+# Update system compiler symlinks to use GCC 10
+rm -f /usr/bin/cc /usr/bin/gcc /usr/bin/g++ /usr/bin/c++
+ln -s /usr/local/bin/gcc /usr/bin/cc
+ln -s /usr/local/bin/gcc /usr/bin/gcc
+ln -s /usr/local/bin/g++ /usr/bin/g++
+ln -s /usr/local/bin/g++ /usr/bin/c++
 ```
 
 **Verify Installation:**
 ```bash
-/usr/local/bin/gcc --version
+# Verify GCC 10 installation
+gcc --version
 # Should output: gcc (GCC) 10.x.x
 
-/usr/local/bin/g++ --version
+g++ --version
 # Should output: g++ (GCC) 10.x.x
+
+# Verify symlinks are correct
+which cc
+# Should output: /usr/bin/cc
+
+ls -al /usr/bin/cc
+# Should show: /usr/bin/cc -> /usr/local/bin/gcc
 ```
 
 ---
