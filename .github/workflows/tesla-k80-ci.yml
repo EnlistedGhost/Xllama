@@ -29,13 +29,13 @@ jobs:
 
       - name: Configure CMake
         run: |
-          CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
+          cmake -B build
         env:
           CMAKE_BUILD_TYPE: Release
 
       - name: Build C++/CUDA components
         run: |
-          CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build --config Release
+          cmake --build build --config Release
         timeout-minutes: 30
 
       - name: Build Go binary
