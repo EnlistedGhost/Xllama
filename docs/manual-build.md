@@ -101,11 +101,8 @@ EOF
 ldconfig
 
 # Update system compiler symlinks to use GCC 10
-rm -f /usr/bin/cc /usr/bin/gcc /usr/bin/g++ /usr/bin/c++
+rm -f /usr/bin/cc
 ln -s /usr/local/bin/gcc /usr/bin/cc
-ln -s /usr/local/bin/gcc /usr/bin/gcc
-ln -s /usr/local/bin/g++ /usr/bin/g++
-ln -s /usr/local/bin/g++ /usr/bin/c++
 ```
 
 **Verify Installation:**
@@ -600,11 +597,11 @@ export CXX=/usr/local/bin/g++
 ```bash
 # CUDA 11.4 is not compatible with GCC 11+
 # You MUST use GCC 10 for compilation
-# Ensure you've installed GCC 10 (Step 5)
+# Ensure you've installed GCC 10 (Step 1)
 
 # Verify compiler paths
 which gcc  # Should point to /usr/local/bin/gcc
-/usr/local/bin/gcc --version  # Should show 10.x
+gcc --version  # Should show 10.x
 ```
 
 ---
