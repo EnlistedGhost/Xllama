@@ -21,11 +21,11 @@ Recent kernel updates in **Fedora, Ubuntu, and Rocky Linux** have **broken compa
 For native builds on **Rocky Linux 9**, you'll need to follow these steps in order:
 
 **Installation Steps:**
-1. **Compile Custom Kernel** (Linux 5.14.x) - Required for NVIDIA 470 compatibility
-2. **Install NVIDIA Driver 470 & CUDA 11.4** - Tesla K80 GPU support
-3. **Install CMake 4.0** - Build system
-4. **Install Go 1.24.2** - Go compiler
-5. **Install GCC 10** (Optional - only if compiling ollama37 from source)
+1. **Install GCC 10** - Required for kernel compilation and ollama37 source builds
+2. **Compile Custom Kernel** (Linux 5.14.x) - Required for NVIDIA 470 compatibility
+3. **Install NVIDIA Driver 470 & CUDA 11.4** - Tesla K80 GPU support
+4. **Install CMake 4.0** - Build system
+5. **Install Go 1.24.2** - Go compiler
 6. **Compile Ollama37** (Optional - if not using pre-built binaries)
 
 **Quick Native Build (after prerequisites):**
@@ -48,7 +48,75 @@ go build -o ollama .
 
 ## Detailed Installation Guide for Rocky Linux 9
 
-### Step 1: Kernel Compilation (Required for NVIDIA 470 Compatibility)
+### Step 1: GCC 10 Installation
+
+#### Why Install GCC 10 First?
+
+**GCC 10 is required for:**
+- Compiling the custom Linux kernel (Step 2)
+- Building ollama37 from source (Step 6)
+- CUDA 11.4 compatibility (CUDA 11.4 nvcc is not compatible with GCC 11.5+)
+
+**Rocky Linux 9** ships with GCC 11.5 by default, which is:
+- ❌ **Incompatible** with CUDA 11.4 nvcc compiler
+- ❌ **Not recommended** for kernel compilation with NVIDIA drivers
+- ✅ **Sufficient** for running pre-built binaries (if you skip Steps 2 and 6)
+
+#### Installation Steps
+
+**Complete installation script:**
+```bash
+# Install prerequisites
+dnf -y install wget unzip lbzip2
+dnf -y groupinstall "Development Tools"
+
+# Download and extract GCC 10 source
+cd /usr/local/src
+wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip
+unzip gcc-10.zip
+cd gcc-releases-gcc-10
+
+# Download GCC prerequisites (GMP, MPFR, MPC, ISL)
+contrib/download_prerequisites
+
+# Create build directory and configure
+mkdir /usr/local/gcc-10
+cd /usr/local/gcc-10
+/usr/local/src/gcc-releases-gcc-10/configure --disable-multilib
+
+# Compile and install (1-2 hours depending on CPU)
+make -j $(nproc)
+make install
+```
+
+> **Note**: The compilation step `make -j $(nproc)` will take 1-2 hours depending on your CPU performance. The `$(nproc)` command uses all available CPU cores to speed up compilation.
+
+**Post-Install Configuration:**
+```bash
+# Create environment script for library paths
+cat > /etc/profile.d/gcc-10.sh << 'EOF'
+#!/bin/sh
+# gcc-10.sh - GCC 10 library path configuration
+export LD_LIBRARY_PATH=/usr/local/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+EOF
+
+# Configure dynamic linker
+echo "/usr/local/lib64" > /etc/ld.so.conf.d/gcc-10.conf
+ldconfig
+```
+
+**Verify Installation:**
+```bash
+/usr/local/bin/gcc --version
+# Should output: gcc (GCC) 10.x.x
+
+/usr/local/bin/g++ --version
+# Should output: g++ (GCC) 10.x.x
+```
+
+---
+
+### Step 2: Kernel Compilation (Required for NVIDIA 470 Compatibility)
 
 #### Why Compile a Custom Kernel?
 
@@ -98,7 +166,7 @@ dnf -y install ncurses-devel
    ```bash
    # First, check available kernel configurations
    ls /usr/src/kernels
-   
+
    # Copy config from the running kernel (adjust version as needed)
    # Example: cp /usr/src/kernels/5.14.0-570.52.1.el9_6.x86_64/.config .config
    cp /usr/src/kernels/$(uname -r)/.config .config
@@ -145,22 +213,12 @@ dnf -y install ncurses-devel
 
 #### Compile Kernel
 
-1. **Clean previous builds (if any):**
-   ```bash
-   make clean
-   ```
-
 2. **Compile kernel (using all CPU cores):**
    ```bash
    make -j$(nproc)
    ```
 
    > **Estimated time**: 30-60 minutes depending on CPU performance
-
-3. **Compile kernel modules:**
-   ```bash
-   make modules -j$(nproc)
-   ```
 
 4. **Install kernel modules:**
    ```bash
@@ -170,28 +228,6 @@ dnf -y install ncurses-devel
 5. **Install kernel:**
    ```bash
    make install
-   ```
-
-#### Configure Bootloader
-
-1. **Update GRUB configuration:**
-   ```bash
-   grub2-mkconfig -o /boot/grub2/grub.cfg
-   ```
-
-2. **Set new kernel as default (optional):**
-   ```bash
-   # List available kernels
-   grubby --info=ALL | grep ^kernel
-
-   # Set default to newly installed kernel
-   grubby --set-default /boot/vmlinuz-5.14.21
-   ```
-
-3. **Verify default kernel:**
-   ```bash
-   grubby --default-kernel
-   # Should output: /boot/vmlinuz-5.14.21
    ```
 
 #### Reboot and Verify
@@ -205,17 +241,6 @@ dnf -y install ncurses-devel
    ```bash
    uname -r
    # Should output: 5.14.21
-   ```
-
-3. **Check kernel configuration:**
-   ```bash
-   # Verify BTF is disabled
-   grep CONFIG_DEBUG_INFO_BTF /boot/config-$(uname -r)
-   # Should output: # CONFIG_DEBUG_INFO_BTF is not set
-
-   # Verify module signature is disabled
-   grep CONFIG_MODULE_SIG /boot/config-$(uname -r)
-   # Should output: # CONFIG_MODULE_SIG is not set
    ```
 
 #### Troubleshooting Kernel Compilation
@@ -242,39 +267,10 @@ Can't read private key
 
 ---
 
-**Issue: Kernel doesn't appear in GRUB menu**
-
-**Solution:**
-```bash
-# Regenerate GRUB config
-grub2-mkconfig -o /boot/grub2/grub.cfg
-
-# Check if kernel is listed
-grubby --info=ALL
-```
-
----
-
-**Issue: System boots to old kernel**
-
-**Solution:**
-```bash
-# Check current default
-grubby --default-kernel
-
-# Set new kernel as default
-grubby --set-default /boot/vmlinuz-5.14.21
-
-# Reboot
-reboot
-```
-
----
-
-### Step 2: NVIDIA Driver 470 & CUDA 11.4 Installation
+### Step 3: NVIDIA Driver 470 & CUDA 11.4 Installation
 
 **Prerequisites:**
-- Rocky Linux 9 system running custom kernel 5.14.x (from Step 1)
+- Rocky Linux 9 system running custom kernel 5.14.x (from Step 2)
 - Root privileges
 - Internet connectivity
 
@@ -342,7 +338,7 @@ nvidia-smi
 
 ---
 
-### Step 3: CMake 4.0 Installation
+### Step 4: CMake 4.0 Installation
 
 1. **Install OpenSSL Development Libraries:**
    ```bash
@@ -389,7 +385,7 @@ nvidia-smi
 
 ---
 
-### Step 4: Go 1.24.2 Installation
+### Step 5: Go 1.24.2 Installation
 
 1. **Download Go Distribution:**
    ```bash
@@ -421,91 +417,16 @@ EOF
 
 ---
 
-### Step 5: GCC 10 Installation (Optional - For Source Compilation Only)
-
-#### When Do You Need GCC 10?
-
-**✅ Required if:**
-- You want to compile ollama37 from source
-- You're building custom CUDA kernels
-- You're modifying C++ components
-
-**❌ Not needed if:**
-- You're only running pre-built ollama37 binaries
-- You're using Docker images
-- You only need to run models (not compile code)
-
-#### Why GCC 10 Specifically?
-
-- **CUDA 11.4 nvcc** is not compatible with GCC 11.5+
-- **Rocky Linux 9** ships with GCC 11.5 by default
-- GCC 11.5 is sufficient for running ollama37, but **not for compiling** it
-- GCC 10 is the last version fully compatible with CUDA 11.4
-
-#### Installation Steps
-
-**Complete installation script:**
-```bash
-# Install prerequisites
-dnf -y install wget unzip lbzip2
-dnf -y groupinstall "Development Tools"
-
-# Download and extract GCC 10 source
-cd /usr/local/src
-wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip
-unzip gcc-10.zip
-cd gcc-releases-gcc-10
-
-# Download GCC prerequisites (GMP, MPFR, MPC, ISL)
-contrib/download_prerequisites
-
-# Create build directory and configure
-mkdir /usr/local/gcc-10
-cd /usr/local/gcc-10
-/usr/local/src/gcc-releases-gcc-10/configure --disable-multilib
-
-# Compile and install (1-2 hours depending on CPU)
-make -j $(nproc)
-make install
-```
-
-> **Note**: The compilation step `make -j $(nproc)` will take 1-2 hours depending on your CPU performance. The `$(nproc)` command uses all available CPU cores to speed up compilation.
-
-**Post-Install Configuration:**
-```bash
-# Create environment script for library paths
-cat > /etc/profile.d/gcc-10.sh << 'EOF'
-#!/bin/sh
-# gcc-10.sh - GCC 10 library path configuration
-export LD_LIBRARY_PATH=/usr/local/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-EOF
-
-# Configure dynamic linker
-echo "/usr/local/lib64" > /etc/ld.so.conf.d/gcc-10.conf
-ldconfig
-```
-
-**Verify Installation:**
-```bash
-/usr/local/bin/gcc --version
-# Should output: gcc (GCC) 10.x.x
-
-/usr/local/bin/g++ --version
-# Should output: g++ (GCC) 10.x.x
-```
-
----
-
 ### Step 6: Ollama37 Compilation (Optional - For Custom Builds)
 
 **Prerequisites:**
 All components installed as per the guides above:
-- Rocky Linux 9 with custom kernel 5.14.x
+- GCC 10 (from Step 1)
+- Rocky Linux 9 with custom kernel 5.14.x (from Step 2)
+- CUDA Toolkit 11.4 (from Step 3)
+- CMake 4.0 (from Step 4)
+- Go 1.24.2 (from Step 5)
 - Git
-- CMake 4.0
-- Go 1.24.2
-- **GCC 10** (required for source compilation)
-- CUDA Toolkit 11.4
 
 **Compilation Steps:**
 
@@ -722,19 +643,19 @@ watch -n 1 nvidia-smi
 ## Summary: Installation Paths
 
 ### Path 1: Pre-built Binary (Easier)
-1. Compile custom kernel 5.14.x
-2. Install NVIDIA Driver 470 & CUDA 11.4
-3. Install CMake 4.0
-4. Install Go 1.24.2
-5. Download pre-built ollama37 binary
-6. ❌ Skip GCC 10 installation (not needed)
+1. ❌ Skip GCC 10 installation (not needed for pre-built binaries)
+2. Compile custom kernel 5.14.x
+3. Install NVIDIA Driver 470 & CUDA 11.4
+4. Install CMake 4.0
+5. Install Go 1.24.2
+6. Download and run pre-built ollama37 binary
 
-### Path 2: Compile from Source (Advanced)
-1. Compile custom kernel 5.14.x
-2. Install NVIDIA Driver 470 & CUDA 11.4
-3. Install CMake 4.0
-4. Install Go 1.24.2
-5. ✅ **Install GCC 10** (required for compilation)
-6. Compile ollama37 from source
+### Path 2: Compile from Source (Advanced - Requires All Steps)
+1. ✅ **Install GCC 10** (required for kernel and ollama37 compilation)
+2. Compile custom kernel 5.14.x (uses GCC 10)
+3. Install NVIDIA Driver 470 & CUDA 11.4
+4. Install CMake 4.0
+5. Install Go 1.24.2
+6. Compile ollama37 from source (uses GCC 10)
 
 Choose the path that best fits your requirements and technical expertise.
