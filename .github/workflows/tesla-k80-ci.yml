@@ -1,0 +1,185 @@
+name: Tesla K80 Build and Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  build-and-test:
+    runs-on: self-hosted
+
+    # Use specific labels if you want to target a particular self-hosted runner
+    # runs-on: [self-hosted, linux, cuda, tesla-k80]
+
+    timeout-minutes: 60 # Prevent hung jobs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for accurate versioning
+
+      - name: Clean previous build
+        run: |
+          rm -rf build
+          rm -f ollama
+
+      - name: Configure CMake
+        run: |
+          CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
+        env:
+          CMAKE_BUILD_TYPE: Release
+
+      - name: Build C++/CUDA components
+        run: |
+          CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build --config Release
+        timeout-minutes: 30
+
+      - name: Build Go binary
+        run: |
+          go build -v -o ollama .
+
+      - name: Verify binary
+        run: |
+          ls -lh ollama
+          file ollama
+          ./ollama --version
+
+      - name: Run Go unit tests
+        run: |
+          go test -v -race -timeout 10m ./...
+        continue-on-error: false
+
+      - name: Start ollama server (background)
+        run: |
+          ./ollama serve > ollama.log 2>&1 &
+          echo $! > ollama.pid
+          echo "Ollama server started with PID $(cat ollama.pid)"
+
+      - name: Wait for server to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "Server is ready!"
+              exit 0
+            fi
+            echo "Waiting for server... attempt $i/30"
+            sleep 2
+          done
+          echo "Server failed to start"
+          cat ollama.log
+          exit 1
+
+      - name: Run integration tests
+        run: |
+          go test -v -timeout 20m ./integration/...
+        continue-on-error: false
+
+      - name: Clear server logs for model test
+        run: |
+          # Truncate log file to start fresh for model loading test
+          > ollama.log
+
+      - name: Pull gemma3:4b model
+        run: |
+          echo "Pulling gemma3:4b model..."
+          ./ollama pull gemma2:2b
+          echo "Model pull completed"
+        timeout-minutes: 15
+
+      - name: Run inference with gemma3:4b
+        run: |
+          echo "Running inference test..."
+          ./ollama run gemma2:2b "Hello, this is a test. Please respond with a short greeting." --verbose
+          echo "Inference completed"
+        timeout-minutes: 5
+
+      - name: Wait for logs to flush
+        run: sleep 3
+
+      - name: Analyze server logs with Claude
+        run: |
+          echo "Analyzing ollama server logs for proper model loading..."
+
+          # Create analysis prompt
+          cat > log_analysis_prompt.txt << 'EOF'
+          Analyze the following Ollama server logs from a Tesla K80 (CUDA Compute Capability 3.7) system.
+
+          Verify that:
+          1. The model loaded successfully without errors
+          2. CUDA/GPU acceleration was properly detected and initialized
+          3. The model is using the Tesla K80 GPU (not CPU fallback)
+          4. There are no CUDA compatibility warnings or errors
+          5. Memory allocation was successful
+          6. Inference completed without errors
+
+          Respond with:
+          - "PASS" if all checks pass and model loaded properly with GPU acceleration
+          - "FAIL: <reason>" if there are critical issues
+          - "WARN: <reason>" if there are warnings but model works
+
+          Be specific about what succeeded or failed. Look for CUDA errors, memory issues, or CPU fallback warnings.
+
+          Server logs:
+          ---
+          EOF
+
+          cat ollama.log >> log_analysis_prompt.txt
+
+          # Run Claude in headless mode to analyze
+          claude -p log_analysis_prompt.txt > log_analysis_result.txt
+
+          echo "=== Claude Analysis Result ==="
+          cat log_analysis_result.txt
+
+          # Check if analysis passed
+          if grep -q "^PASS" log_analysis_result.txt; then
+            echo "✓ Log analysis PASSED - Model loaded correctly on Tesla K80"
+            exit 0
+          elif grep -q "^WARN" log_analysis_result.txt; then
+            echo "⚠ Log analysis has WARNINGS - Review needed"
+            cat log_analysis_result.txt
+            exit 0  # Don't fail on warnings, but they're visible
+          else
+            echo "✗ Log analysis FAILED - Model loading issues detected"
+            cat log_analysis_result.txt
+            exit 1
+          fi
+
+      - name: Check GPU memory usage
+        if: always()
+        run: |
+          echo "=== GPU Memory Status ==="
+          nvidia-smi --query-gpu=memory.used,memory.total --format=csv
+
+      - name: Stop ollama server
+        if: always()
+        run: |
+          if [ -f ollama.pid ]; then
+            kill $(cat ollama.pid) || true
+            rm ollama.pid
+          fi
+          pkill -f "ollama serve" || true
+
+      - name: Upload logs and analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-logs-and-analysis
+          path: |
+            ollama.log
+            log_analysis_prompt.txt
+            log_analysis_result.txt
+            build/**/*.log
+          retention-days: 7
+
+      - name: Upload binary artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-binary-${{ github.sha }}
+          path: ollama
+          retention-days: 14
