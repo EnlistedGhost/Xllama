@@ -67,7 +67,6 @@ go build -o ollama .
 **Complete installation script:**
 ```bash
 # Install prerequisites
-dnf -y install wget unzip lbzip2
 dnf -y groupinstall "Development Tools"
 
 # Download and extract GCC 10 source
@@ -93,15 +92,12 @@ make install
 
 **Post-Install Configuration:**
 ```bash
-# Create environment script for library paths
-cat > /etc/profile.d/gcc-10.sh << 'EOF'
-#!/bin/sh
-# gcc-10.sh - GCC 10 library path configuration
-export LD_LIBRARY_PATH=/usr/local/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+# Configure dynamic linker to include both system and GCC 10 library paths
+cat > /etc/ld.so.conf.d/gcc-10.conf << 'EOF'
+/usr/lib64
+/usr/local/lib64
 EOF
 
-# Configure dynamic linker
-echo "/usr/local/lib64" > /etc/ld.so.conf.d/gcc-10.conf
 ldconfig
 ```
 
