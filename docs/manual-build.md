@@ -23,10 +23,11 @@ For native builds on **Rocky Linux 9**, you'll need to follow these steps in ord
 **Installation Steps:**
 1. **Install GCC 10** - Required for kernel compilation and ollama37 source builds
 2. **Compile Custom Kernel** (Linux 5.14.x) - Required for NVIDIA 470 compatibility
-3. **Install NVIDIA Driver 470 & CUDA 11.4** - Tesla K80 GPU support
-4. **Install CMake 4.0** - Build system
-5. **Install Go 1.24.2** - Go compiler
-6. **Compile Ollama37** (Optional - if not using pre-built binaries)
+3. **Install NVIDIA Driver 470** - Tesla K80 GPU driver support
+4. **Install CUDA 11.4 Toolkit** - CUDA development environment
+5. **Install CMake 4.0** - Build system
+6. **Install Go 1.25.3** - Go compiler
+7. **Compile Ollama37** (Optional - if not using pre-built binaries)
 
 **Quick Native Build (after prerequisites):**
 
@@ -36,8 +37,8 @@ git clone https://github.com/dogkeeper886/ollama37
 cd ollama37
 
 # If compiling from source (requires GCC 10):
-cmake -B build
-cmake --build build -j$(nproc)
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
 go build -o ollama .
 
 # If using pre-built binary (GCC 10 not required):
@@ -179,12 +180,13 @@ dnf -y install ncurses-devel
    # Example: cp /usr/src/kernels/5.14.0-570.52.1.el9_6.x86_64/.config .config
    cp /usr/src/kernels/$(uname -r)/.config .config
    ```
+
 2. **Open menuconfig to adjust settings:**
    ```bash
    make menuconfig
    ```
 
-4. **Required Configuration Changes:**
+3. **Required Configuration Changes:**
 
    Navigate and **DISABLE** the following options:
 
@@ -214,26 +216,26 @@ dnf -y install ncurses-devel
    > - Trusted keys: Conflicts with out-of-tree driver compilation
    > - BTF debug: Can cause build failures and is unnecessary for production use
 
-5. **Save configuration:**
+4. **Save configuration:**
    - Press `<Save>`
    - Confirm default filename `.config`
    - Press `<Exit>` to quit menuconfig
 
 #### Compile Kernel
 
-2. **Compile kernel (using all CPU cores):**
+1. **Compile kernel (using all CPU cores):**
    ```bash
    make -j$(nproc)
    ```
 
    > **Estimated time**: 30-60 minutes depending on CPU performance
 
-4. **Install kernel modules:**
+2. **Install kernel modules:**
    ```bash
    make modules_install
    ```
 
-5. **Install kernel:**
+3. **Install kernel:**
    ```bash
    make install
    ```
@@ -275,7 +277,7 @@ Can't read private key
 
 ---
 
-### Step 3: NVIDIA Driver 470 & CUDA 11.4 Installation
+### Step 3: NVIDIA Driver 470 Installation
 
 **Prerequisites:**
 - Rocky Linux 9 system running custom kernel 5.14.x (from Step 2)
@@ -289,64 +291,125 @@ Can't read private key
    dnf -y update
    ```
 
-2. **Install EPEL Repository:**
+2. **Install required dependencies:**
    ```bash
    dnf -y install epel-release
+   dnf -y install libglvnd-devel.x86_64
    ```
 
-3. **Add NVIDIA CUDA Repository:**
+3. **Switch to text mode (runlevel 3):**
    ```bash
-   dnf -y config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+   init 3
    ```
+   
+   > **Note**: This will exit the graphical interface. You'll need to log in via text console.
 
-4. **Install NVIDIA Driver (Version 470):**
+4. **Download NVIDIA Driver 470.256.02:**
    ```bash
-   dnf -y module install nvidia-driver:470-dkms
+   cd /tmp
+   wget https://us.download.nvidia.com/tesla/470.256.02/NVIDIA-Linux-x86_64-470.256.02.run
    ```
 
-   > **Note**: If the module install fails, you may need to install directly:
-   > ```bash
-   > dnf -y install nvidia-driver-470 nvidia-driver-470-dkms
-   > ```
-
-5. **Install CUDA Toolkit 11.4:**
+5. **Install NVIDIA Driver:**
    ```bash
-   dnf -y install cuda-11-4
+   chmod +x NVIDIA-Linux-x86_64-470.256.02.run
+   sh NVIDIA-Linux-x86_64-470.256.02.run
    ```
+   
+   > **Installation prompts:**
+   > - Accept the license agreement
+   > - If asked about DKMS, select "Yes" to register with DKMS
+   > - If asked about 32-bit compatibility libraries, select based on your needs
+   > - If asked about X configuration, select "Yes" if you use graphical interface
 
-6. **Set up CUDA Environment Variables:**
-   ```bash
-   # Create /etc/profile.d/cuda-11.4.sh
-   cat > /etc/profile.d/cuda-11.4.sh << 'EOF'
-#!/bin/sh
-# cuda-11.4.sh - CUDA 11.4 environment configuration for Tesla K80 support
-export PATH=/usr/local/cuda-11.4/bin${PATH:+:${PATH}}
-export LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-EOF
-
-   # Apply changes
-   source /etc/profile.d/cuda-11.4.sh
-   ```
-
-7. **Reboot to load NVIDIA driver:**
+6. **Reboot to load NVIDIA driver:**
    ```bash
    reboot
    ```
 
 **Verification:**
 ```bash
-# Check CUDA compiler
-nvcc --version
-# Should show: Cuda compilation tools, release 11.4
-
 # Check driver and GPU
 nvidia-smi
-# Should show Tesla K80 GPU(s) with driver version 470.x
+# Should show Tesla K80 GPU(s) with driver version 470.256.02
 ```
 
 ---
 
-### Step 4: CMake 4.0 Installation
+### Step 4: CUDA 11.4 Toolkit Installation
+
+**Prerequisites:**
+- NVIDIA Driver 470 installed and verified (from Step 3)
+- Root privileges
+
+**Steps:**
+
+1. **Download CUDA 11.4.0 installer:**
+   ```bash
+   cd /tmp
+   wget https://developer.download.nvidia.com/compute/cuda/11.4.0/local_installers/cuda_11.4.0_470.42.01_linux.run
+   ```
+
+2. **Run CUDA installer:**
+   ```bash
+   sh cuda_11.4.0_470.42.01_linux.run
+   ```
+   
+   > **Installation prompts:**
+   > - Accept the license agreement
+   > - **IMPORTANT**: Deselect "Driver" option (driver already installed in Step 3)
+   > - Keep selected: CUDA Toolkit, CUDA Samples, CUDA Demo Suite, CUDA Documentation
+   > - Confirm installation
+
+3. **Set up CUDA Environment Variables:**
+   
+   Create two configuration files:
+
+   **a) PATH configuration in `/etc/profile.d/`:**
+   ```bash
+   cat > /etc/profile.d/cuda-11.4.sh << 'EOF'
+   #!/bin/sh
+   # cuda-11.4.sh - CUDA 11.4 PATH configuration for Tesla K80 support
+   export PATH=/usr/local/cuda-11.4/bin${PATH:+:${PATH}}
+   EOF
+
+   # Apply PATH changes
+   source /etc/profile.d/cuda-11.4.sh
+   ```
+
+   **b) Dynamic linker configuration:**
+   
+   The CUDA installer creates `/etc/ld.so.conf.d/cuda-11-4.conf` automatically with the following content:
+   ```
+   /usr/local/cuda-11.4/lib64
+   /usr/local/cuda-11.4/targets/x86_64-linux/lib
+   ```
+
+   If the file doesn't exist or needs to be recreated:
+   ```bash
+   cat > /etc/ld.so.conf.d/cuda-11-4.conf << 'EOF'
+   /usr/local/cuda-11.4/lib64
+   /usr/local/cuda-11.4/targets/x86_64-linux/lib
+   EOF
+
+   # Update dynamic linker cache
+   ldconfig
+   ```
+
+**Verification:**
+```bash
+# Check CUDA compiler
+nvcc --version
+# Should show: Cuda compilation tools, release 11.4, V11.4.48
+
+# Check driver and CUDA compatibility
+nvidia-smi
+# Should show Tesla K80 GPU(s) with driver version 470.256.02 and CUDA Version: 11.4
+```
+
+---
+
+### Step 5: CMake 4.0 Installation
 
 1. **Install OpenSSL Development Libraries:**
    ```bash
@@ -393,47 +456,49 @@ nvidia-smi
 
 ---
 
-### Step 5: Go 1.24.2 Installation
+### Step 6: Go 1.25.3 Installation
 
 1. **Download Go Distribution:**
    ```bash
    cd /usr/local
-   wget https://go.dev/dl/go1.24.2.linux-amd64.tar.gz
+   wget https://go.dev/dl/go1.25.3.linux-amd64.tar.gz
    ```
 
 2. **Extract the Archive:**
    ```bash
-   tar xvf go1.24.2.linux-amd64.tar.gz
+   tar xvf go1.25.3.linux-amd64.tar.gz
    ```
 
 3. **Post Install Configuration:**
    ```bash
-   cat > /etc/profile.d/go-1.24.2.sh << 'EOF'
-#!/bin/sh
-# go-1.24.2.sh - Go 1.24.2 environment configuration
-export PATH=/usr/local/go/bin${PATH:+:${PATH}}
-EOF
+   cat > /etc/profile.d/go.conf << 'EOF'
+   #!/bin/sh
+   # go.conf - Go environment configuration
+   export PATH=/usr/local/go/bin${PATH:+:${PATH}}
+   EOF
 
-   source /etc/profile.d/go-1.24.2.sh
+   # Apply the configuration
+   source /etc/profile.d/go.conf
    ```
 
 4. **Verify Installation:**
    ```bash
    go version
-   # Should output: go version go1.24.2 linux/amd64
+   # Should output: go version go1.25.3 linux/amd64
    ```
 
 ---
 
-### Step 6: Ollama37 Compilation (Optional - For Custom Builds)
+### Step 7: Ollama37 Compilation (Optional - For Custom Builds)
 
 **Prerequisites:**
 All components installed as per the guides above:
 - GCC 10 (from Step 1)
 - Rocky Linux 9 with custom kernel 5.14.x (from Step 2)
-- CUDA Toolkit 11.4 (from Step 3)
-- CMake 4.0 (from Step 4)
-- Go 1.24.2 (from Step 5)
+- NVIDIA Driver 470 (from Step 3)
+- CUDA Toolkit 11.4 (from Step 4)
+- CMake 4.0 (from Step 5)
+- Go 1.25.3 (from Step 6)
 - Git
 
 **Compilation Steps:**
@@ -452,13 +517,13 @@ All components installed as per the guides above:
 3. **CMake Configuration:**
    Set compiler variables and configure the build system:
    ```bash
-   cmake -B build
+   CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
    ```
 
 4. **CMake Build:**
    Compile the C++ components (parallel build):
    ```bash
-   cmake --build build -j$(nproc)
+   CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
    ```
 
    > **Note:** `-j$(nproc)` enables parallel compilation using all available CPU cores. You can specify a number like `-j4` to limit the number of parallel jobs.
@@ -653,17 +718,19 @@ watch -n 1 nvidia-smi
 ### Path 1: Pre-built Binary (Easier)
 1. ❌ Skip GCC 10 installation (not needed for pre-built binaries)
 2. Compile custom kernel 5.14.x
-3. Install NVIDIA Driver 470 & CUDA 11.4
-4. Install CMake 4.0
-5. Install Go 1.24.2
-6. Download and run pre-built ollama37 binary
+3. Install NVIDIA Driver 470
+4. Install CUDA 11.4 Toolkit
+5. Install CMake 4.0
+6. Install Go 1.25.3
+7. Download and run pre-built ollama37 binary
 
 ### Path 2: Compile from Source (Advanced - Requires All Steps)
 1. ✅ **Install GCC 10** (required for kernel and ollama37 compilation)
 2. Compile custom kernel 5.14.x (uses GCC 10)
-3. Install NVIDIA Driver 470 & CUDA 11.4
-4. Install CMake 4.0
-5. Install Go 1.24.2
-6. Compile ollama37 from source (uses GCC 10)
+3. Install NVIDIA Driver 470
+4. Install CUDA 11.4 Toolkit
+5. Install CMake 4.0
+6. Install Go 1.25.3
+7. Compile ollama37 from source (uses GCC 10)
 
 Choose the path that best fits your requirements and technical expertise.
