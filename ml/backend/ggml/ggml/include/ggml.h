@@ -353,7 +353,7 @@ extern "C" {
         GGML_TYPE_F16     = 1,
         GGML_TYPE_Q4_0    = 2,
         GGML_TYPE_Q4_1    = 3,
-        GGML_TYPE_MXFP4   = 4, // Formerly removed type GGML_TYPE_Q4_2
+        // GGML_TYPE_Q4_2 = 4, support has been removed
         // GGML_TYPE_Q4_3 = 5, support has been removed
         GGML_TYPE_Q5_0    = 6,
         GGML_TYPE_Q5_1    = 7,
@@ -385,10 +385,11 @@ extern "C" {
         // GGML_TYPE_Q4_0_8_8 = 33,
         GGML_TYPE_TQ1_0   = 34,
         GGML_TYPE_TQ2_0   = 35,
-        // GGML_TYPE_IQ4_NL_4_4 = 36,
+        // GGML_TYPE_IQ4_NL_4_4 = 36, support has been removed from gguf files
         // GGML_TYPE_IQ4_NL_4_8 = 37,
         // GGML_TYPE_IQ4_NL_8_8 = 38,
-        GGML_TYPE_COUNT   = 39,
+        GGML_TYPE_MXFP4   = 39,
+        GGML_TYPE_COUNT   = 40,
     };
 
     // precision

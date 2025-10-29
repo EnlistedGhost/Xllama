@@ -589,13 +589,11 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .to_float                 = (ggml_to_float_t) dequantize_row_q4_1,
         .from_float_ref           = (ggml_from_float_t) quantize_row_q4_1_ref,
     },
-    [GGML_TYPE_MXFP4] = { // formerly deprecated GGML_TYPE_Q4_2
-        .type_name                = "mxfp4",
-        .blck_size                = MXFP4,
-        .type_size                = sizeof(block_mxfp4),
-        .is_quantized             = true,
-        .to_float                 = (ggml_to_float_t) dequantize_row_mxfp4,
-        .from_float_ref           = (ggml_from_float_t) quantize_row_mxfp4_ref,
+    [4] = { // GGML_TYPE_Q4_2
+        .type_name                = "DEPRECATED",
+        .blck_size                = 0,
+        .type_size                = 0,
+        .is_quantized             = false,
     },
     [5] = { // GGML_TYPE_Q4_3
         .type_name                = "DEPRECATED",
@@ -811,6 +809,14 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .blck_size                = 0,
         .type_size                = 0,
         .is_quantized             = false,
+    },
+    [GGML_TYPE_MXFP4] = {
+        .type_name                = "mxfp4",
+        .blck_size                = MXFP4,
+        .type_size                = sizeof(block_mxfp4),
+        .is_quantized             = true,
+        .to_float                 = (ggml_to_float_t) dequantize_row_mxfp4,
+        .from_float_ref           = (ggml_from_float_t) quantize_row_mxfp4_ref,
     },
 };
 

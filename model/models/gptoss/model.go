@@ -102,7 +102,9 @@ func (d *TransformerBlock) Forward(ctx ml.Context, hiddenStates, positions, outp
 
 type AttentionBlock struct {
 	Norm   *nn.RMSNorm `gguf:"attn_norm"`
-	QKV    *nn.Linear  `gguf:"attn_qkv"`
+	Query  *nn.Linear  `gguf:"attn_q"`
+	Key    *nn.Linear  `gguf:"attn_k"`
+	Value  *nn.Linear  `gguf:"attn_v"`
 	Output *nn.Linear  `gguf:"attn_out"`
 	Sinks  ml.Tensor   `gguf:"attn_sinks"`
 }
@@ -113,33 +115,17 @@ func (attn *AttentionBlock) Forward(ctx ml.Context, hiddenStates, positions ml.T
 	residual := hiddenStates
 	hiddenStates = attn.Norm.Forward(ctx, hiddenStates, opts.eps)
 
-	qkv := attn.QKV.Forward(ctx, hiddenStates)
-
-	// query = qkv[..., : num_attention_heads * head_dim].reshape(batch_size, num_attention_heads, head_dim)
-	query := qkv.View(ctx,
-		0,
-		opts.headDim(), qkv.Stride(0)*opts.headDim(),
-		opts.numHeads, qkv.Stride(1),
-		batchSize,
-	)
+	// Compute separate Q, K, V projections
+	query := attn.Query.Forward(ctx, hiddenStates)
+	query = query.Reshape(ctx, opts.headDim(), opts.numHeads, batchSize)
 	query = fast.RoPE(ctx, query, positions, opts.headDim(), opts.ropeBase, 1./opts.ropeScale, opts.RoPEOptions()...)
 
-	// key = qkv[..., num_attention_heads * head_dim:(num_attention_heads + num_key_value_heads) * head_dim].reshape(batch_size, num_key_value_heads, head_dim)
-	key := qkv.View(ctx,
-		qkv.Stride(0)*opts.headDim()*opts.numHeads,
-		opts.headDim(), qkv.Stride(0)*opts.headDim(),
-		opts.numKVHeads, qkv.Stride(1),
-		batchSize,
-	)
+	key := attn.Key.Forward(ctx, hiddenStates)
+	key = key.Reshape(ctx, opts.headDim(), opts.numKVHeads, batchSize)
 	key = fast.RoPE(ctx, key, positions, opts.headDim(), opts.ropeBase, 1./opts.ropeScale, opts.RoPEOptions()...)
 
-	// value = qkv[..., (num_attention_heads  + num_key_value_heads) * head_dim:].reshape(batch_size, num_key_value_heads, head_dim)
-	value := qkv.View(ctx,
-		qkv.Stride(0)*opts.headDim()*(opts.numHeads+opts.numKVHeads),
-		opts.headDim(), qkv.Stride(0)*opts.headDim(),
-		opts.numKVHeads, qkv.Stride(1),
-		batchSize,
-	)
+	value := attn.Value.Forward(ctx, hiddenStates)
+	value = value.Reshape(ctx, opts.headDim(), opts.numKVHeads, batchSize)
 
 	cache.Put(ctx, key, value)
 	key, value, mask := cache.Get(ctx)
@@ -165,7 +151,8 @@ func (attn *AttentionBlock) Forward(ctx ml.Context, hiddenStates, positions ml.T
 type MLPBlock struct {
 	Norm   *nn.RMSNorm     `gguf:"ffn_norm"`
 	Router *nn.Linear      `gguf:"ffn_gate_inp"`
-	GateUp *nn.LinearBatch `gguf:"ffn_gate_up_exps"`
+	Gate   *nn.LinearBatch `gguf:"ffn_gate_exps"`
+	Up     *nn.LinearBatch `gguf:"ffn_up_exps"`
 	Down   *nn.LinearBatch `gguf:"ffn_down_exps"`
 }
 
@@ -185,21 +172,16 @@ func (mlp *MLPBlock) Forward(ctx ml.Context, hiddenStates, one ml.Tensor, opts *
 
 	hiddenStates = hiddenStates.Reshape(ctx, hiddenStates.Dim(0), 1, hiddenStates.Dim(1))
 
-	hiddenStates = mlp.GateUp.Forward(ctx, hiddenStates, selectedExperts)
-	hiddenStates = hiddenStates.Reshape(ctx, 2, hiddenStates.Dim(0)/2, hiddenStates.Dim(1), hiddenStates.Dim(2))
+	// Compute gate and up separately instead of using fused GateUp
+	gateStates := mlp.Gate.Forward(ctx, hiddenStates, selectedExperts)
+	gateStates = gateStates.Clamp(ctx, float32(math.Inf(-1)), 7.0)
+	gateStates = gateStates.QuickGELU(ctx)
 
-	dimStride := []int{hiddenStates.Dim(0) / 2, hiddenStates.Stride(1), hiddenStates.Dim(1), hiddenStates.Stride(2), hiddenStates.Dim(2), hiddenStates.Stride(3), hiddenStates.Dim(3)}
+	upStates := mlp.Up.Forward(ctx, hiddenStates, selectedExperts)
+	upStates = upStates.Clamp(ctx, -7.0, 7.0)
 
-	glu := hiddenStates.View(ctx, 0, dimStride...)
-	glu = glu.Contiguous(ctx)
-	glu = glu.Clamp(ctx, float32(math.Inf(-1)), 7.0)
-	glu = glu.QuickGELU(ctx)
-
-	linear := hiddenStates.View(ctx, hiddenStates.Stride(0), dimStride...)
-	linear = linear.Clamp(ctx, -7.0, 7.0)
-
-	hiddenStates = glu.Mul(ctx, linear.Add(ctx, one))
-	hiddenStates = hiddenStates.Reshape(ctx, hiddenStates.Dim(0)*hiddenStates.Dim(1), hiddenStates.Dim(2), hiddenStates.Dim(3))
+	hiddenStates = gateStates.Mul(ctx, upStates.Add(ctx, one))
+	// hiddenStates is now [intermediate_size, num_experts_used, seq*batch]
 
 	experts := mlp.Down.Forward(ctx, hiddenStates, selectedExperts)
 	experts = experts.Mul(ctx, routingWeights)

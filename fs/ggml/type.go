@@ -187,45 +187,42 @@ func (ftype FileType) ToTensorType() TensorType {
 type TensorType uint32
 
 const (
-	TensorTypeF32 TensorType = iota
-	TensorTypeF16
-	TensorTypeQ4_0
-	TensorTypeQ4_1
-	TensorTypeMXFP4 // Formerly unused tensorTypeQ4_2
-	tensorTypeQ4_3  // unused by GGML
-	TensorTypeQ5_0
-	TensorTypeQ5_1
-	TensorTypeQ8_0
-	TensorTypeQ8_1
-	TensorTypeQ2_K
-	TensorTypeQ3_K
-	TensorTypeQ4_K
-	TensorTypeQ5_K
-	TensorTypeQ6_K
-	TensorTypeQ8_K
-	tensorTypeIQ2_XXS // not supported by ollama
-	tensorTypeIQ2_XS  // not supported by ollama
-	tensorTypeIQ3_XXS // not supported by ollama
-	tensorTypeIQ1_S   // not supported by ollama
-	tensorTypeIQ4_NL  // not supported by ollama
-	tensorTypeIQ3_S   // not supported by ollama
-	tensorTypeIQ2_S   // not supported by ollama
-	tensorTypeIQ4_XS  // not supported by ollama
-	TensorTypeI8
-	TensorTypeI16
-	TensorTypeI32
-	TensorTypeI64
-	TensorTypeF64
-	tensorTypeIQ1_M // not supported by ollama
-	TensorTypeBF16
-	tensorTypeQ4_0_4_4   // unused by GGML
-	tensorTypeQ4_0_4_8   // unused by GGML
-	tensorTypeQ4_0_8_8   // unused by GGML
-	tensorTypeTQ1_0      // not supported by ollama
-	tensorTypeTQ2_0      // not supported by ollama
-	tensorTypeIQ4_NL_4_4 // unused by GGML
-	tensorTypeIQ4_NL_4_8 // unused by GGML
-	tensorTypeIQ4_NL_8_8 // unused by GGML
+	TensorTypeF32 TensorType = 0
+	TensorTypeF16            = 1
+	TensorTypeQ4_0           = 2
+	TensorTypeQ4_1           = 3
+	// 4 = Q4_2 removed
+	// 5 = Q4_3 removed
+	TensorTypeQ5_0           = 6
+	TensorTypeQ5_1           = 7
+	TensorTypeQ8_0           = 8
+	TensorTypeQ8_1           = 9
+	TensorTypeQ2_K           = 10
+	TensorTypeQ3_K           = 11
+	TensorTypeQ4_K           = 12
+	TensorTypeQ5_K           = 13
+	TensorTypeQ6_K           = 14
+	TensorTypeQ8_K           = 15
+	tensorTypeIQ2_XXS        = 16 // not supported by ollama
+	tensorTypeIQ2_XS         = 17 // not supported by ollama
+	tensorTypeIQ3_XXS        = 18 // not supported by ollama
+	tensorTypeIQ1_S          = 19 // not supported by ollama
+	tensorTypeIQ4_NL         = 20 // not supported by ollama
+	tensorTypeIQ3_S          = 21 // not supported by ollama
+	tensorTypeIQ2_S          = 22 // not supported by ollama
+	tensorTypeIQ4_XS         = 23 // not supported by ollama
+	TensorTypeI8             = 24
+	TensorTypeI16            = 25
+	TensorTypeI32            = 26
+	TensorTypeI64            = 27
+	TensorTypeF64            = 28
+	tensorTypeIQ1_M          = 29 // not supported by ollama
+	TensorTypeBF16           = 30
+	// 31-33 = Q4_0 variants removed
+	tensorTypeTQ1_0          = 34 // not supported by ollama
+	tensorTypeTQ2_0          = 35 // not supported by ollama
+	// 36-38 = IQ4_NL variants removed
+	TensorTypeMXFP4          = 39
 )
 
 // ParseFileType parses the provided GGUF file type

@@ -149,6 +149,24 @@ Analysis of real-world usage (gemma3:12b) revealed a **2.6 GiB memory overestima
 - Simpler deployment for single-model workloads
 - Empirically validated with real Tesla K80 measurements
 
+## Model Architecture Compatibility
+
+### GPT-OSS Model Fix (2025-10-29)
+
+**Issue**: The `gpt-oss` model architecture code expected fused tensor formats that didn't match the actual GGUF file structure, causing nil pointer panics.
+
+**Root Cause**: Mismatch between code expectations and GGUF file format:
+- Code expected: `attn_qkv` (fused), `ffn_gate_up_exps` (fused)
+- GGUF contains: `attn_q/k/v` (separate), `ffn_gate_exps/up_exps` (separate)
+
+**Fix Applied** (`model/models/gptoss/model.go`):
+1. Updated `AttentionBlock` struct to use separate `Query`, `Key`, `Value` fields instead of fused `QKV`
+2. Modified `AttentionBlock.Forward()` to compute Q/K/V projections separately
+3. Updated `MLPBlock` struct to use separate `Gate` and `Up` fields instead of fused `GateUp`
+4. Modified `MLPBlock.Forward()` to compute gate/up separately and removed incorrect reshape
+
+**Result**: ✅ `gpt-oss:20b` model now loads and runs successfully on Tesla K80
+
 ## Documentation Structure
 
 The project documentation is organized as follows:
