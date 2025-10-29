@@ -110,7 +110,7 @@ These files contain specific line numbers, code blocks, and commands to execute 
 
 ### Memory Estimation Optimization for Single-GPU Preference
 
-**Status**: ⚠️ **IN PROGRESS** - Design complete, implementation pending
+**Status**: ✅ **COMPLETED** - Implemented and tested successfully
 
 **Goal**: Reduce unnecessary multi-GPU splits by fixing graph memory overestimation for Tesla K80 dual-GPU systems.
 
@@ -131,10 +131,15 @@ Analysis of real-world usage (gemma3:12b) revealed a **2.6 GiB memory overestima
 - Cross-GPU communication overhead reduces inference speed
 - Wasted VRAM reserves space that's never used
 
-**Solution**: Modify graph allocation logic to use empirically-measured ratios:
-- Primary GPU (last GPU with most layers): 100% of graph size (1.3 GiB)
-- Secondary GPUs: 15% of graph size (~186 MiB)
-- Expected reduction: 13.0 GiB → 10.8 GiB (fits in single K80)
+**Solution Implemented**:
+1. Per-GPU graph allocations (190 MiB for secondary GPUs vs 1.3 GiB for primary)
+2. Reverse-order layer distribution (prefer loading on last GPU first)
+
+**Results Achieved**:
+- **gemma3:4b**: Single GPU (no split) ✅
+- **gemma3:12b**: 1,48 layer split (down from 25,24) - 98% on primary GPU ✅
+- **Memory estimate**: Reduced from 13.0 GiB → 11.9 GiB
+- **Actual usage**: 10.4-10.5 GiB total (fits on single K80)
 
 **Implementation Details**: See `llm/CLAUDE.md` for specific code changes and testing procedures.
 

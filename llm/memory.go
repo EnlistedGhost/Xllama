@@ -227,6 +227,19 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		overflow += gpuZeroOverhead
 	}
 
+	// ollama37: Create per-GPU graph allocations for Tesla K80 multi-GPU optimization
+	// Secondary GPUs use measured 190 MiB, primary GPU uses full graph
+	gpuGraphAllocations := make(map[int]uint64)
+	for i := range gpus {
+		if len(gpus) > 1 && i < len(gpus)-1 {
+			// Secondary GPU: use empirically measured value (181 MiB, rounded to 190 MiB)
+			gpuGraphAllocations[i] = 190 * 1024 * 1024
+		} else {
+			// Primary GPU or single GPU: use full graph
+			gpuGraphAllocations[i] = max(graphPartialOffload, graphFullOffload)
+		}
+	}
+
 	// For all the layers, find where they can fit on the GPU(s)
 	for i := int(f.KV().BlockCount()) - 1; i >= 0; i-- {
 		// Some models have inconsistent layer sizes
@@ -243,16 +256,18 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		}
 
 		// distribute the layers across the GPU(s) that have space
+		// ollama37: Prefer loading on last GPU first (single-GPU preference for Tesla K80)
 		for j := len(gpusWithSpace); j > 0; j-- {
-			g := gpusWithSpace[i%j]
-			used := gpuAllocations[g.i] + max(graphPartialOffload, graphFullOffload)
+			// Try GPUs in reverse order (highest index first) instead of round-robin
+			g := gpusWithSpace[j-1]
+			used := gpuAllocations[g.i] + gpuGraphAllocations[g.i]  // ollama37: use per-GPU graph allocation
 			if g.g.FreeMemory > overhead+used+layerSize {
 				gpuAllocations[g.i] += layerSize
 				layerCounts[g.i]++
 				layerCount++
 				break
 			} else {
-				gpusWithSpace = append(gpusWithSpace[:i%j], gpusWithSpace[i%j+1:]...)
+				gpusWithSpace = append(gpusWithSpace[:j-1], gpusWithSpace[j:]...)
 			}
 		}
 
@@ -268,9 +283,10 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 	memoryLastLayer := memoryLayerOutput + ollamaEngineProjectorWeights + ollamaEngineProjectorGraph
 	if memoryLastLayer > 0 {
 		if opts.NumGPU < 0 || layerCount < opts.NumGPU {
+			// ollama37: Prefer last GPU first (single-GPU preference for Tesla K80)
 			for j := len(gpusWithSpace); j > 0; j-- {
-				g := gpusWithSpace[layerCount%j]
-				used := gpuAllocations[g.i] + max(graphPartialOffload, graphFullOffload)
+				g := gpusWithSpace[j-1]  // Try GPUs in reverse order
+				used := gpuAllocations[g.i] + gpuGraphAllocations[g.i]  // ollama37: use per-GPU graph allocation
 				if g.g.FreeMemory > overhead+used+memoryLastLayer {
 					gpuAllocations[g.i] += memoryLastLayer
 					layerCounts[g.i]++
@@ -287,15 +303,13 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 	}
 
 	// Add the applicable (full or partial) graph allocations
+	// ollama37: Use per-GPU graph allocations calculated earlier
+	// Secondary GPUs use measured 190 MiB, primary GPU uses full graph
 	for i := range gpus {
 		if layerCounts[i] <= 0 {
 			continue
 		}
-		if fullyLoaded {
-			gpuAllocations[i] += graphFullOffload
-		} else {
-			gpuAllocations[i] += graphPartialOffload
-		}
+		gpuAllocations[i] += gpuGraphAllocations[i]
 	}
 	if fullyLoaded {
 		graphOffload = graphFullOffload
