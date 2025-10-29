@@ -39,22 +39,6 @@ The project documentation is organized as follows:
 
 ### Building the Project
 
-#### Quick Build
-```bash
-# Configure build (required on Linux/Intel macOS/Windows)
-cmake -B build
-cmake --build build
-
-# For ROCm on Windows
-cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-cmake --build build --config Release
-
-# Build Go binary
-go build -o ollama .
-```
-
-#### Tesla K80 Optimized Build
-For Tesla K80 and CUDA Compute Capability 3.7 hardware, use specific compiler versions:
 ```bash
 # Configure with GCC 10 and CUDA 11.4 support
 CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
@@ -88,18 +72,6 @@ go test ./integration/...
 
 # Run specific test package
 go test ./server/...
-```
-
-### Docker
-```bash
-# Build standard image
-docker build .
-
-# Build with ROCm support
-docker build --build-arg FLAVOR=rocm .
-
-# Build ollama37 image for Tesla K80/Compute 3.7 support
-docker build -f ollama37.Dockerfile -t ollama37 .
 ```
 
 ## Architecture Overview
@@ -155,7 +127,7 @@ The project supports multiple acceleration backends:
 
 Libraries are dynamically loaded from:
 - `./lib/ollama` (Windows)
-- `../lib/ollama` (Linux) 
+- `../lib/ollama` (Linux)
 - `.` (macOS)
 - `build/lib/ollama` (development)
 

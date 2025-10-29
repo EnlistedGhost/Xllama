@@ -37,8 +37,8 @@ git clone https://github.com/dogkeeper886/ollama37
 cd ollama37
 
 # If compiling from source (requires GCC 10):
-cmake -B build
-cmake --build build -j$(nproc)
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
 go build -o ollama .
 
 # If using pre-built binary (GCC 10 not required):
@@ -522,13 +522,13 @@ go version
 3. **CMake Configuration:**
    Set compiler variables and configure the build system:
    ```bash
-   cmake -B build
+   CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
    ```
 
 4. **CMake Build:**
    Compile the C++ components (parallel build):
    ```bash
-   cmake --build build -j$(nproc)
+   CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
    ```
 
    > **Note:** `-j$(nproc)` enables parallel compilation using all available CPU cores. You can specify a number like `-j4` to limit the number of parallel jobs.
