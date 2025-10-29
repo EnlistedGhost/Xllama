@@ -22,8 +22,9 @@
       "name": "CUDA 11",
       "inherits": [ "CUDA" ],
       "cacheVariables": {
-        "CMAKE_CUDA_ARCHITECTURES": "37;50;52;53;60;61;70;75;80;86"
-      }
+        "CMAKE_CUDA_ARCHITECTURES": "37"
+      },
+      "description": "ollama37: CC 3.7 only (Tesla K80, K40, M40). For CC 5.0+ use upstream Ollama."
     },
     {
       "name": "CUDA 12",

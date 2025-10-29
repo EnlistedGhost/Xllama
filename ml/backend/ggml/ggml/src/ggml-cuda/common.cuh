@@ -41,12 +41,8 @@
 #define CUDART_HMAX   11070 // CUDA 11.7, min. ver. for which __hmax and __hmax2 are known to work (may be higher than needed)
 #define CUDART_HMASK  12000 // CUDA 12.0, min. ver. for half2 -> uint mask comparisons
 
-#define GGML_CUDA_CC_PASCAL          600
-#define GGML_CUDA_CC_DP4A            610 // minimum compute capability for __dp4a, an intrinsic for byte-wise dot products
-#define GGML_CUDA_CC_VOLTA           700
-#define GGML_CUDA_CC_TURING          750
-#define GGML_CUDA_CC_AMPERE          800
-#define GGML_CUDA_CC_ADA_LOVELACE    890
+// ollama37: Only CC 3.7 (Kepler - Tesla K80) supported
+#define GGML_CUDA_CC_KEPLER          370
 #define GGML_CUDA_CC_OFFSET_AMD      0x1000000
 #define GGML_CUDA_CC_OFFSET_MTHREADS 0x0100000
 #define GGML_CUDA_CC_IS_NVIDIA(cc)   (cc < GGML_CUDA_CC_OFFSET_MTHREADS)
@@ -87,44 +83,14 @@
 #define GGML_CUDA_CC_IS_QY2(cc)      (cc >= GGML_CUDA_CC_QY2 && cc < GGML_CUDA_CC_NG)
 #define GGML_CUDA_CC_IS_NG(cc)       (cc >= GGML_CUDA_CC_NG)
 
-#ifdef __CUDA_ARCH_LIST__
-constexpr bool ggml_cuda_has_arch_impl(int) {
-    return false;
-}
-
-template<class ... Archs>
-constexpr bool ggml_cuda_has_arch_impl(const int arch, const int first, Archs... rest) {
-    return arch == first || ggml_cuda_has_arch_impl(arch, rest...);
-}
-
+// ollama37: Simplified for CC 3.7 only - always return 370
 constexpr bool ggml_cuda_has_arch(const int arch) {
-    return ggml_cuda_has_arch_impl(arch, __CUDA_ARCH_LIST__);
+    return arch == GGML_CUDA_CC_KEPLER;
 }
 
-constexpr int ggml_cuda_highest_compiled_arch_impl(const int arch, const int cur) {
-    if (cur == 0) {
-        GGML_ABORT("ggml was not compiled with any CUDA arch <= %d", arch);
-    }
-    return cur;
+constexpr int ggml_cuda_highest_compiled_arch(const int /* arch */) {
+    return GGML_CUDA_CC_KEPLER;
 }
-
-template<class ... Archs>
-constexpr int ggml_cuda_highest_compiled_arch_impl(const int arch, const int cur, const int first, Archs... rest) {
-    if (first <= arch && first > cur) {
-        return ggml_cuda_highest_compiled_arch_impl(arch, first, rest...);
-    } else {
-        return ggml_cuda_highest_compiled_arch_impl(arch, cur, rest...);
-    }
-}
-
-constexpr int ggml_cuda_highest_compiled_arch(const int arch) {
-    return ggml_cuda_highest_compiled_arch_impl(arch, 0, __CUDA_ARCH_LIST__);
-}
-#else
-static int ggml_cuda_highest_compiled_arch(const int arch) {
-    return arch;
-}
-#endif // __CUDA_ARCH_LIST__
 
 // ---------------------------------------------------------------------------------------------------------
 
@@ -195,70 +161,49 @@ typedef float2 dfloat2;
 #define GGML_USE_VMM
 #endif // (!defined(GGML_USE_HIP) && !defined(GGML_CUDA_NO_VMM)) || (defined(GGML_USE_HIP) && !defined(GGML_HIP_NO_VMM))
 
-#if (defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) || __CUDA_ARCH__ >= GGML_CUDA_CC_PASCAL
-#define FP16_AVAILABLE
-#endif // (defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) || __CUDA_ARCH__ >= GGML_CUDA_CC_PASCAL
-
-#if defined(FP16_AVAILABLE) && __CUDA_ARCH__ != 610
-#define FAST_FP16_AVAILABLE
-#endif // defined(FP16_AVAILABLE) && __CUDA_ARCH__ != 610
-
-#if !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
-#define FP16_MMA_AVAILABLE
-#endif // !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
-
-#if defined(GGML_HIP_ROCWMMA_FATTN) && (defined(CDNA) || defined(RDNA3) || defined(RDNA4))
-#define FP16_MMA_AVAILABLE
-#endif // defined(GGML_HIP_ROCWMMA_FATTN) && (defined(CDNA) || defined(RDNA3) || defined(RDNA4))
-
-#if !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_TURING
-#define NEW_MMA_AVAILABLE
-#endif // !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_TURING
-
-#if !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
-#define CP_ASYNC_AVAILABLE
-#endif // !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
+// ollama37: CC 3.7 (Kepler) has none of these modern GPU features
+// FP16_AVAILABLE - requires CC 6.0+ (Pascal)
+// FAST_FP16_AVAILABLE - requires CC 6.0+ (Pascal)
+// FP16_MMA_AVAILABLE - requires CC 7.0+ (Volta) tensor cores
+// NEW_MMA_AVAILABLE - requires CC 7.5+ (Turing)
+// CP_ASYNC_AVAILABLE - requires CC 8.0+ (Ampere)
+// All removed - CC 3.7 uses basic FP32 operations only
 
 #if !defined(GGML_CUDA_NO_FA) && !(defined(GGML_USE_MUSA) && GGML_CUDA_MUSA_ARCH_IS_QY1)
 #define FLASH_ATTN_AVAILABLE
 #endif // !defined(GGML_CUDA_NO_FA) && !(defined(GGML_USE_MUSA) && GGML_CUDA_MUSA_ARCH_IS_QY1)
 
-static bool fp16_available(const int cc) {
-    return ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_PASCAL;
+// ollama37: CC 3.7 (Kepler) has none of these features - all return false
+static bool fp16_available(const int /* cc */) {
+    return false;  // Requires CC 6.0+ (Pascal)
 }
 
-static bool fast_fp16_available(const int cc) {
-    return (GGML_CUDA_CC_IS_NVIDIA(cc) && fp16_available(cc) && cc != 610) || GGML_CUDA_CC_IS_AMD(cc);
+static bool fast_fp16_available(const int /* cc */) {
+    return false;  // Requires CC 6.0+ (Pascal)
 }
 
 // To be used for feature selection of external libraries, e.g. cuBLAS.
-static bool fast_fp16_hardware_available(const int cc) {
-    return (GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_PASCAL && cc != 610) || GGML_CUDA_CC_IS_AMD(cc);
+static bool fast_fp16_hardware_available(const int /* cc */) {
+    return false;  // Requires CC 6.0+ (Pascal)
 }
 
 // Any FP16 tensor core instructions are available for ggml code.
-static bool fp16_mma_available(const int cc) {
-#if defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__) && !defined(GGML_HIP_ROCWMMA_FATTN)
-    return false;
-#else
-    return (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_VOLTA) ||
-        GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA3(cc) || GGML_CUDA_CC_IS_RDNA4(cc);
-#endif // defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__) && !defined(GGML_HIP_ROCWMMA_FATTN)
+static bool fp16_mma_available(const int /* cc */) {
+    return false;  // Requires CC 7.0+ (Volta) tensor cores
 }
 
 // To be used for feature selection of external libraries, e.g. cuBLAS.
-static bool fp16_mma_hardware_available(const int cc) {
-    return (GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_VOLTA) ||
-        GGML_CUDA_CC_IS_CDNA(cc) || GGML_CUDA_CC_IS_RDNA3(cc) || GGML_CUDA_CC_IS_RDNA4(cc);
+static bool fp16_mma_hardware_available(const int /* cc */) {
+    return false;  // Requires CC 7.0+ (Volta) tensor cores
 }
 
 // Volta technically had FP16 tensor cores but they work very differently compared to Turing and later.
-static bool new_mma_available(const int cc) {
-    return GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_TURING;
+static bool new_mma_available(const int /* cc */) {
+    return false;  // Requires CC 7.5+ (Turing)
 }
 
-static bool cp_async_available(const int cc) {
-    return cc < GGML_CUDA_CC_OFFSET_AMD && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_AMPERE;
+static bool cp_async_available(const int /* cc */) {
+    return false;  // Requires CC 8.0+ (Ampere)
 }
 
 static constexpr __device__ int ggml_cuda_get_physical_warp_size() {
@@ -317,15 +262,12 @@ struct ggml_cuda_unroll<1> {
 
 template<int width = WARP_SIZE>
 static __device__ __forceinline__ int warp_reduce_sum(int x) {
-#if !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
-    return __reduce_add_sync(0xffffffff, x);
-#else
+    // ollama37: CC 3.7 uses basic implementation (Ampere __reduce_add_sync requires CC 8.0+)
 #pragma unroll
     for (int offset = width/2; offset > 0; offset >>= 1) {
         x += __shfl_xor_sync(0xffffffff, x, offset, width);
     }
     return x;
-#endif // !(defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)) && __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
 }
 
 template<int width = WARP_SIZE>
@@ -475,13 +417,11 @@ static __device__ __forceinline__ int ggml_cuda_dp4a(const int a, const int b, i
 
 #else // defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)
 
-#if __CUDA_ARCH__ >= GGML_CUDA_CC_DP4A || defined(GGML_USE_MUSA)
-    return __dp4a(a, b, c);
-#else // __CUDA_ARCH__ >= GGML_CUDA_CC_DP4A || defined(GGML_USE_MUSA)
+    // ollama37: CC 3.7 doesn't have __dp4a instruction (requires CC 6.1+)
+    // Always use fallback implementation
     const int8_t * a8 = (const int8_t *) &a;
     const int8_t * b8 = (const int8_t *) &b;
     return c + a8[0]*b8[0] + a8[1]*b8[1] + a8[2]*b8[2] + a8[3]*b8[3];
-#endif // __CUDA_ARCH__ >= GGML_CUDA_CC_DP4A || defined(GGML_USE_MUSA)
 
 #endif // defined(GGML_USE_HIP) && defined(__HIP_PLATFORM_AMD__)
 }

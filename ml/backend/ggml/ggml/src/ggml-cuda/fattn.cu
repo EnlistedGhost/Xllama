@@ -1,13 +1,17 @@
 #include "common.cuh"
 #include "fattn-common.cuh"
-#include "fattn-mma-f16.cuh"
+// ollama37: Removed tensor core includes (not available on CC 3.7)
+// #include "fattn-mma-f16.cuh"
+// #include "fattn-wmma-f16.cuh"
 #include "fattn-tile-f16.cuh"
 #include "fattn-tile-f32.cuh"
 #include "fattn-vec-f16.cuh"
 #include "fattn-vec-f32.cuh"
-#include "fattn-wmma-f16.cuh"
 #include "fattn.cuh"
 
+// ollama37: MMA/WMMA functions disabled - not available on CC 3.7
+// These functions are never called because fp16_mma_available() always returns false
+#if 0
 template <int DKQ, int DV, int ncols2>
 static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * Q = dst->src[0];
@@ -116,6 +120,7 @@ static void ggml_cuda_flash_attn_ext_mma_f16(ggml_backend_cuda_context & ctx, gg
             break;
     }
 }
+#endif // ollama37: End of disabled MMA/WMMA functions
 
 #define FATTN_VEC_F16_CASE(D, type_K, type_V)                               \
     if (Q->ne[0] == (D) && K->type == (type_K) && V->type == (type_V)) {    \
@@ -282,7 +287,9 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
     if (GGML_CUDA_CC_IS_AMD(cc)) {
 #if defined(GGML_HIP_ROCWMMA_FATTN)
         if (fp16_mma_available(cc)) {
-            ggml_cuda_flash_attn_ext_wmma_f16(ctx, dst);
+            // ollama37: WMMA disabled for CC 3.7
+            // ggml_cuda_flash_attn_ext_wmma_f16(ctx, dst);
+            GGML_ABORT("WMMA not available on CC 3.7");
             return;
         }
 #endif // defined(GGML_HIP_ROCWMMA_FATTN)
@@ -324,7 +331,8 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
 
     const bool gqa_opt_applies = ((Q->ne[2] / K->ne[2]) % 2 == 0) && mask; // The mma-based kernels have GQA-specific optimizations
     const bool mma_needs_data_conversion = K->type != GGML_TYPE_F16 || V->type != GGML_TYPE_F16;
-    const bool mma_faster_for_bs1 = new_mma_available(cc) && gqa_opt_applies && cc < GGML_CUDA_CC_ADA_LOVELACE && !mma_needs_data_conversion;
+    // ollama37: CC 3.7 is always less than Ada Lovelace (CC 8.9), so replace undefined constant with true
+    const bool mma_faster_for_bs1 = new_mma_available(cc) && gqa_opt_applies && true && !mma_needs_data_conversion;
     const bool can_use_vector_kernel = Q->ne[0] <= 256 && Q->ne[0] % (2*warp_size) == 0;
     if (Q->ne[1] == 1 && can_use_vector_kernel && !mma_faster_for_bs1) {
         if (prec == GGML_PREC_DEFAULT) {
@@ -335,11 +343,15 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         return;
     }
 
+    // ollama37: CC 3.7 doesn't have MMA/WMMA (fp16_mma_available always returns false)
     // The MMA implementation needs Turing or newer, use the old WMMA code for Volta:
+    // Since fp16_mma_available(cc) is always false for CC 3.7, these paths are never taken
     if (fp16_mma_available(cc) && !new_mma_available(cc)) {
-        ggml_cuda_flash_attn_ext_wmma_f16(ctx, dst);
+        // ggml_cuda_flash_attn_ext_wmma_f16(ctx, dst);  // Disabled for CC 3.7
+        GGML_ABORT("MMA/WMMA not available on CC 3.7");
         return;
     }
 
-    ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);
+    // ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);  // Disabled for CC 3.7
+    GGML_ABORT("MMA not available on CC 3.7");
 }

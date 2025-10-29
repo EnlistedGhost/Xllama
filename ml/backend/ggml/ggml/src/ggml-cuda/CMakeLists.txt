@@ -4,7 +4,9 @@ find_package(CUDAToolkit)
 
 if (CUDAToolkit_FOUND)
     message(STATUS "CUDA Toolkit found")
-    set(CMAKE_CUDA_ARCHITECTURES "37;50;61;70;75;80")
+    # ollama37: Compile for CC 3.7 only (Tesla K80, K40, M40 - Kepler architecture)
+    # For CC 5.0+ GPUs, use upstream Ollama which provides better support
+    set(CMAKE_CUDA_ARCHITECTURES "37")
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         # native == GPUs available at build time
         # 50     == Maxwell, lowest CUDA 12 standard

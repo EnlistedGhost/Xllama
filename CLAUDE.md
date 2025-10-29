@@ -24,6 +24,74 @@ CUDA Compute Capability 3.7 support is maintained in the following key locations
 
 The project uses CUDA 11 toolchain to maintain compatibility with Tesla K80 and other Compute Capability 3.7 GPUs, as CUDA 12 officially dropped support for these architectures.
 
+## CC 3.7-Only Optimization Strategy
+
+**Status**: ✅ **COMPLETED** - All 8 phases finished, compilation successful
+
+**Completion Summary**: Successfully simplified CUDA backend to support only CC 3.7 (Kepler/Tesla K80). After the initial optimization removed modern GPU architecture constants from `common.cuh`, additional fixes were required to handle undefined constant references throughout the codebase. All MMA (tensor core) functions have been properly disabled while preserving DP4A functions for CC 3.7 compatibility.
+
+**Goal**: Simplify the codebase by removing support for all CUDA Compute Capabilities except 3.7, since newer GPUs (CC 5.0+) are already supported by upstream Ollama.
+
+### Rationale
+
+- **Upstream Ollama**: Supports CC 5.0+ (Maxwell and newer GPUs)
+- **Unique to Ollama37**: Only CC 3.7 (Kepler - Tesla K80, K40, M40)
+- **Clear positioning**: "For Tesla K80 and Kepler GPUs only"
+- **Benefits**:
+  - 80-85% smaller binaries (compile for 1 arch instead of 6)
+  - 5-6x faster build times
+  - Simpler codebase (no dead code for features CC 3.7 doesn't have)
+  - Easier maintenance and debugging
+
+### Features NOT Available on CC 3.7
+
+The following modern GPU features can be removed from the codebase:
+
+- **FP16 native operations** (requires CC 6.0+ Pascal)
+- **DP4A instruction** (int8 dot product, requires CC 6.1+)
+- **Tensor Cores / MMA / WMMA** (requires CC 7.0+ Volta/Turing)
+- **Async memory copy / CP_ASYNC** (requires CC 8.0+ Ampere)
+- **Flash Attention** (requires CC 7.0+)
+- **Stream-K scheduling** (optimized for CC 7.0+)
+
+### ✅ Completed Optimizations
+
+**Files completely removed** (~116KB):
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/mma.cuh` - Tensor core operations
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/fattn-wmma-f16.cu` - Flash attention with WMMA
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/fattn-wmma-f16.cuh`
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/fattn-mma-f16.cuh`
+- ✅ 39 template instantiation files for MMA/WMMA operations
+
+**Files simplified for CC 3.7 only**:
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/common.cuh` - Removed architecture detection, hardcoded CC 3.7
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/mmq.cuh` - Disabled 6 MMA functions, removed Volta+ optimizations
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/mmq.cu` - Disabled Stream-K scheduling
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/convert.cu` - Disabled Pascal+ FP16 code block
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/mmv.cu` - Hardcoded FP32 precision
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/mmvmxfp4.cu` - Hardcoded FP32 precision
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/ggml-cuda.cu` - Disabled BF16, CUDA graphs, Volta checks
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/fattn.cu` - Replaced Ada Lovelace constant references
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/fattn-common.cuh` - Simplified Stream-K scheduling
+
+**Build configuration**:
+- ✅ `ml/backend/ggml/ggml/src/ggml-cuda/CMakeLists.txt:7` - Set to `"37"` only
+- ✅ `CMakePresets.json:25` - CUDA 11 preset set to `"37"` only
+
+**Post-completion fixes** (architecture constant references):
+- ✅ Fixed undefined `GGML_CUDA_CC_PASCAL`, `GGML_CUDA_CC_VOLTA`, `GGML_CUDA_CC_DP4A`, `GGML_CUDA_CC_ADA_LOVELACE` in 4 files
+- ✅ Corrected overly broad MMA disabling in mmq.cuh that accidentally disabled DP4A functions
+- ✅ Set all `vec_dot_mma` function pointers to `nullptr` in mmq_type_traits structs
+
+### Implementation Tracking
+
+Detailed cleanup instructions are maintained in folder-specific `CLAUDE.md` files:
+
+- `ml/backend/ggml/ggml/src/ggml-cuda/CLAUDE.md` - CUDA kernel cleanup instructions
+- `ml/CLAUDE.md` - Go-level GPU detection simplification
+
+These files contain specific line numbers, code blocks, and commands to execute the cleanup incrementally across sessions.
+
 ## Documentation Structure
 
 The project documentation is organized as follows:

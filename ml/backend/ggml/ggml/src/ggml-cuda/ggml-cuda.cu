@@ -1296,10 +1296,9 @@ static void ggml_cuda_op_mul_mat_cublas(
 
     const bool use_fp16 = (src0->type == GGML_TYPE_F16 || ggml_is_quantized(src0->type)) && ggml_is_contiguous(src0) && row_diff == src0->ne[1] && dst->op_params[0] == GGML_PREC_DEFAULT && src0->type != GGML_TYPE_MXFP4;
 
-    // BF16 requires compute capability 8.0 (Ampere) or higher for CUDA_R_16BF support
-    // For older GPUs like Tesla K80 (cc 3.7), we need to fallback to FP16 or FP32
-    const bool bf16_supported = GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_AMPERE;
-    
+    // ollama37: CC 3.7 doesn't support BF16 (requires CC 8.0+ Ampere)
+    const bool bf16_supported = false;
+
     if (src0->type == GGML_TYPE_BF16 && ggml_is_contiguous(src0) && row_diff == src0->ne[1] && bf16_supported) {
         ggml_cuda_pool_alloc<nv_bfloat16> src1_as_bf16(ctx.pool(id));
         if (src1->type != GGML_TYPE_BF16) {
@@ -1328,7 +1327,8 @@ static void ggml_cuda_op_mul_mat_cublas(
 
         const to_fp32_cuda_t to_fp32_cuda = ggml_get_to_fp32_cuda(GGML_TYPE_BF16);
         to_fp32_cuda(dst_bf16.get(), dst_dd_i, row_diff*src1_ncols, stream);
-    } else if (((GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_VOLTA) || GGML_CUDA_CC_IS_AMD(cc)) && use_fp16) {
+    // ollama37: CC 3.7 is never >= Volta (CC 7.0), so replace undefined constant with false
+    } else if (((GGML_CUDA_CC_IS_NVIDIA(cc) && false) || GGML_CUDA_CC_IS_AMD(cc)) && use_fp16) {
         // convert src0 and src1 to fp16, multiply as fp16, convert dst to fp32
         ggml_cuda_pool_alloc<half> src0_as_f16(ctx.pool(id));
         if (src0->type != GGML_TYPE_F16) {
@@ -2834,7 +2834,8 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     bool cuda_graph_update_required = false;
 
     if (cuda_ctx->cuda_graph->graph == nullptr) {
-        if (ggml_cuda_info().devices[cuda_ctx->device].cc < GGML_CUDA_CC_AMPERE) {
+        // ollama37: CC 3.7 (Kepler) is always < Ampere, so always disable
+        if (true) {
             cuda_ctx->cuda_graph->disable_due_to_gpu_arch = true;
 #ifndef NDEBUG
             GGML_LOG_DEBUG("%s: disabling CUDA graphs due to GPU architecture\n", __func__);
@@ -3349,12 +3350,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
             return false;
 #endif // FLASH_ATTN_AVAILABLE
             if (op->src[1]->ne[0] != op->src[2]->ne[0]) {
-                const int cc = ggml_cuda_info().devices[dev_ctx->device].cc;
-                if (!new_mma_available(cc) || cc < GGML_CUDA_CC_AMPERE) {
-                    return false;
-                }
-                const int gqa_ratio = op->src[0]->ne[2] / op->src[1]->ne[2];
-                return op->src[1]->ne[0] == 576 && op->src[2]->ne[0] == 512 && op->src[3] && gqa_ratio % 16 == 0;
+                // ollama37: CC 3.7 doesn't have MMA or Ampere features
+                return false;
             }
             if (op->src[0]->ne[0] == 192) {
                 return false;

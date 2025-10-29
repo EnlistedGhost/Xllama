@@ -223,7 +223,8 @@ void ggml_cuda_mul_mat_vec(ggml_backend_cuda_context & ctx, const ggml_tensor * 
     GGML_ASSERT(        nb0        == ts_dst);
 
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-    const enum ggml_prec prec = fast_fp16_available(cc) ? ggml_prec(dst->op_params[0]) : GGML_PREC_F32;
+    // ollama37: CC 3.7 doesn't have fast FP16 (requires CC 6.0+), always use FP32
+    const enum ggml_prec prec = GGML_PREC_F32;
 
     const float   * src1_d =       (const float   *) src1->data;
     const int32_t *  ids_d = ids ? (const int32_t *)  ids->data : nullptr;
@@ -287,7 +288,8 @@ void ggml_cuda_op_mul_mat_vec(
     GGML_ASSERT(src1_ncols == 1);
 
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-    const enum ggml_prec prec = fast_fp16_available(cc) ? ggml_prec(dst->op_params[0]) : GGML_PREC_F32;
+    // ollama37: CC 3.7 doesn't have fast FP16 (requires CC 6.0+), always use FP32
+    const enum ggml_prec prec = GGML_PREC_F32;
 
 
     // ggml_cuda_op provides single, contiguous matrices
