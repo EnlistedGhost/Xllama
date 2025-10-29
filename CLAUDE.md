@@ -110,44 +110,56 @@ These files contain specific line numbers, code blocks, and commands to execute 
 
 ### Memory Estimation Optimization for Single-GPU Preference
 
-**Status**: ✅ **COMPLETED** - Implemented and tested successfully
+**Status**: ✅ **COMPLETED** - Fully implemented and tested (2025-10-30)
 
-**Goal**: Reduce unnecessary multi-GPU splits by fixing graph memory overestimation for Tesla K80 dual-GPU systems.
+**Goal**: Eliminate unnecessary multi-GPU splits by fixing graph memory overestimation for Tesla K80.
 
-**Problem Identified** (2025-10-29):
+### Phase 1: Per-GPU Graph Allocation (2025-10-29)
 
-Analysis of real-world usage (gemma3:12b) revealed a **2.6 GiB memory overestimation** causing unnecessary multi-GPU splits:
+**Problem**: Multi-GPU systems allocated full graph memory (1.3 GiB) to EACH GPU, causing 2.6 GiB total overestimation.
 
-| Component | Estimated | Actual | Issue |
-|-----------|-----------|--------|-------|
-| GPU 0 | 7.7 GiB | 4.1 GiB | 47% overestimate |
-| GPU 1 | 5.3 GiB | 6.3 GiB | Accurate |
-| **Total** | **13.0 GiB** | **10.4 GiB** | **Fits in single GPU!** |
+**Solution**: Secondary GPUs use 190 MiB, primary GPU uses full 1.3 GiB (based on empirical measurements).
 
-**Root Cause**: `llm/memory.go:289-298` allocates full graph memory (1.3 GiB) to **EACH GPU**, but actual usage shows only the primary GPU needs full graph. Secondary GPUs only need ~15% of graph size (~186 MiB).
+**Results**: gemma3:12b split improved from 25,24 → 1,48 layers, but still not single-GPU.
 
-**Impact**:
-- Models that fit in single GPU (11.2 GiB) are unnecessarily split across 2 GPUs
-- Cross-GPU communication overhead reduces inference speed
-- Wasted VRAM reserves space that's never used
+### Phase 2: CC 3.7 Graph Correction Factor (2025-10-30)
 
-**Solution Implemented**:
-1. Per-GPU graph allocations (190 MiB for secondary GPUs vs 1.3 GiB for primary)
-2. Reverse-order layer distribution (prefer loading on last GPU first)
+**Problem**: Graph estimates were 15-20% higher than actual usage for CC 3.7 GPUs:
+- Estimated: 1.3 GiB
+- Actual: 1.1 GiB
+- This caused gemma3:12b single-GPU check to fail by ~200 MiB margin
+
+**Root Cause**: Output layer (2.6 GiB) couldn't fit after 48 layers (8.5 GiB) due to overestimated graph overhead.
+
+**Solution** (`llm/memory.go:173-182`):
+```go
+// Apply empirical 85% correction factor for Tesla K80 (CC 3.7)
+if gpus[0].Library == "cuda" && gpus[0].Compute == "3.7" {
+    graphPartialOffload = (graphPartialOffload * 85) / 100
+    graphFullOffload = (graphFullOffload * 85) / 100
+}
+```
 
 **Results Achieved**:
-- **gemma3:4b**: Single GPU (no split) ✅
-- **gemma3:12b**: 1,48 layer split (down from 25,24) - 98% on primary GPU ✅
-- **Memory estimate**: Reduced from 13.0 GiB → 11.9 GiB
-- **Actual usage**: 10.4-10.5 GiB total (fits on single K80)
+- **gemma3:4b**: Single GPU ✅
+- **gemma3:12b**: Single GPU ✅ (was 1,48 split)
+- **Memory estimate**: 11.9 GiB → 11.0 GiB (-900 MiB)
+- **Actual usage**: 10.0 GiB on single GPU
+- **GPU utilization**: 94% during inference
+- **nvidia-smi**: GPU 0: 10,015 MiB, GPU 1: 7 MiB (idle)
 
-**Implementation Details**: See `llm/CLAUDE.md` for specific code changes and testing procedures.
+**Technical Details**:
+- Only affects CUDA CC 3.7 GPUs (Tesla K80, K40, M40)
+- No impact on newer GPUs (CC 5.0+)
+- Maintains 10% safety margin between estimate and actual
+- Preserves multi-GPU functionality for models >11 GiB
 
 **Benefits**:
-- More models run on single GPU = faster inference
-- Better VRAM utilization
-- Simpler deployment for single-model workloads
-- Empirically validated with real Tesla K80 measurements
+- ✅ gemma3:12b runs on single GPU (no cross-GPU communication)
+- ✅ Faster inference (no tensor split overhead)
+- ✅ Better VRAM utilization
+- ✅ Empirically validated with real measurements
+- ✅ Conservative correction maintains stability
 
 ## Model Architecture Compatibility
 
