@@ -122,6 +122,8 @@ static void ggml_cuda_flash_attn_ext_mma_f16(ggml_backend_cuda_context & ctx, gg
 }
 #endif // ollama37: End of disabled MMA/WMMA functions
 
+// ollama37: Disable vec flash attention functions (reference undefined template instantiations)
+#if 0
 #define FATTN_VEC_F16_CASE(D, type_K, type_V)                               \
     if (Q->ne[0] == (D) && K->type == (type_K) && V->type == (type_V)) {    \
         ggml_cuda_flash_attn_ext_vec_f16_case<D, type_K, type_V>(ctx, dst); \
@@ -271,6 +273,7 @@ static void ggml_cuda_flash_attn_ext_vec_f32(ggml_backend_cuda_context & ctx, gg
 
     on_no_fattn_vec_case(Q->ne[0]);
 }
+#endif // ollama37: End of disabled flash attention helpers
 
 void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * KQV  = dst;
@@ -281,77 +284,16 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
 
     ggml_cuda_set_device(ctx.device);
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-    const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
-    const enum ggml_prec prec = ggml_flash_attn_ext_get_prec(KQV);
 
-    if (GGML_CUDA_CC_IS_AMD(cc)) {
-#if defined(GGML_HIP_ROCWMMA_FATTN)
-        if (fp16_mma_available(cc)) {
-            // ollama37: WMMA disabled for CC 3.7
-            // ggml_cuda_flash_attn_ext_wmma_f16(ctx, dst);
-            GGML_ABORT("WMMA not available on CC 3.7");
-            return;
-        }
-#endif // defined(GGML_HIP_ROCWMMA_FATTN)
+    // ollama37: Flash Attention requires CC 7.0+ (Volta/Tensor Cores)
+    // CC 3.7 (Kepler/Tesla K80) doesn't support it
+    // All flash attention helper functions are disabled for CC 3.7
+    GGML_ABORT("Flash Attention not supported on CC 3.7 (Tesla K80/Kepler). Requires CC 7.0+ (Volta/Tensor Cores).");
 
-        // On AMD the tile kernels perform poorly, use the vec kernel instead:
-        if (prec == GGML_PREC_DEFAULT && fast_fp16_available(cc)) {
-            ggml_cuda_flash_attn_ext_vec_f16(ctx, dst);
-        } else {
-            ggml_cuda_flash_attn_ext_vec_f32(ctx, dst);
-        }
-        return;
-    }
-
-    if (!fast_fp16_available(cc)) {
-        if (Q->ne[1] <= 8 || Q->ne[0] == 256) {
-            ggml_cuda_flash_attn_ext_vec_f32(ctx, dst);
-        } else {
-            ggml_cuda_flash_attn_ext_tile_f32(ctx, dst);
-        }
-        return;
-    }
-
-    if (!fp16_mma_available(cc)) {
-        if (prec == GGML_PREC_DEFAULT) {
-            if (Q->ne[1] <= 8 || Q->ne[0] == 256) {
-                ggml_cuda_flash_attn_ext_vec_f16(ctx, dst);
-            } else {
-                ggml_cuda_flash_attn_ext_tile_f16(ctx, dst);
-            }
-        } else {
-            if (Q->ne[1] <= 8 || Q->ne[0] == 256) {
-                ggml_cuda_flash_attn_ext_vec_f32(ctx, dst);
-            } else {
-                ggml_cuda_flash_attn_ext_tile_f32(ctx, dst);
-            }
-        }
-        return;
-    }
-
-    const bool gqa_opt_applies = ((Q->ne[2] / K->ne[2]) % 2 == 0) && mask; // The mma-based kernels have GQA-specific optimizations
-    const bool mma_needs_data_conversion = K->type != GGML_TYPE_F16 || V->type != GGML_TYPE_F16;
-    // ollama37: CC 3.7 is always less than Ada Lovelace (CC 8.9), so replace undefined constant with true
-    const bool mma_faster_for_bs1 = new_mma_available(cc) && gqa_opt_applies && true && !mma_needs_data_conversion;
-    const bool can_use_vector_kernel = Q->ne[0] <= 256 && Q->ne[0] % (2*warp_size) == 0;
-    if (Q->ne[1] == 1 && can_use_vector_kernel && !mma_faster_for_bs1) {
-        if (prec == GGML_PREC_DEFAULT) {
-            ggml_cuda_flash_attn_ext_vec_f16(ctx, dst);
-        } else {
-            ggml_cuda_flash_attn_ext_vec_f32(ctx, dst);
-        }
-        return;
-    }
-
-    // ollama37: CC 3.7 doesn't have MMA/WMMA (fp16_mma_available always returns false)
-    // The MMA implementation needs Turing or newer, use the old WMMA code for Volta:
-    // Since fp16_mma_available(cc) is always false for CC 3.7, these paths are never taken
-    if (fp16_mma_available(cc) && !new_mma_available(cc)) {
-        // ggml_cuda_flash_attn_ext_wmma_f16(ctx, dst);  // Disabled for CC 3.7
-        GGML_ABORT("MMA/WMMA not available on CC 3.7");
-        return;
-    }
-
-    // ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);  // Disabled for CC 3.7
-    GGML_ABORT("MMA not available on CC 3.7");
+    GGML_UNUSED(KQV);
+    GGML_UNUSED(Q);
+    GGML_UNUSED(K);
+    GGML_UNUSED(V);
+    GGML_UNUSED(mask);
+    GGML_UNUSED(cc);
 }

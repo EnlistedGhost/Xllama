@@ -3655,4 +3655,19 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
     return cuda_backend;
 }
 
+// Score function for backend selection
+// Returns 0 if CUDA is not available, positive score if available
+static int ggml_backend_cuda_score(void) {
+    // Check if CUDA devices are available
+    int device_count = ggml_backend_cuda_get_device_count();
+    if (device_count <= 0) {
+        return 0;  // No CUDA devices available
+    }
+
+    // CUDA is available - return positive score
+    // Base score of 100 for CUDA availability
+    return 100;
+}
+
 GGML_BACKEND_DL_IMPL(ggml_backend_cuda_reg)
+GGML_BACKEND_DL_SCORE_IMPL(ggml_backend_cuda_score)
