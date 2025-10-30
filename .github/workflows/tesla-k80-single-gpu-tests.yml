@@ -13,13 +13,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify ollama binary exists
+      - name: Download ollama binary from build workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: ollama-binary
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Make ollama binary executable
         run: |
-          if [ ! -f ./ollama ]; then
-            echo "Error: ollama binary not found. Please run the build workflow first."
-            exit 1
-          fi
+          chmod +x ollama
           ls -lh ollama
+          ./ollama --version
 
       - name: Build test-runner
         run: |
