@@ -28,31 +28,26 @@ jobs:
           CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake -B build
         env:
           CMAKE_BUILD_TYPE: Release
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Build C++/CUDA components
         run: |
           CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
         timeout-minutes: 30
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Build Go binary
         run: |
           go build -v -o ollama .
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Verify binary was created
         run: |
           ls -lh ollama
           ./ollama --version
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
-      - name: Upload ollama binary as artifact
+      - name: Upload ollama binary and libraries as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ollama-binary
-          path: ollama
+          path: |
+            ollama
+            build/lib/ollama/
           retention-days: 7

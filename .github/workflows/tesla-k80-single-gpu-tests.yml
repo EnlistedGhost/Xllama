@@ -27,8 +27,6 @@ jobs:
           chmod +x ollama
           ls -lh ollama
           ./ollama --version
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Build test-runner
         run: |
@@ -38,21 +36,15 @@ jobs:
           go build -o ../../test-runner .
           cd ../..
           ls -lh test-runner
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Validate test configuration
         run: |
           ./test-runner validate --config test/config/quick.yaml
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Run quick tests
         run: |
           ./test-runner run --profile quick --config test/config/quick.yaml --output test-report-quick --verbose
         timeout-minutes: 10
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Check quick test results
         run: |
@@ -79,8 +71,6 @@ jobs:
         run: |
           ./test-runner run --profile full --config test/config/models.yaml --output test-report-full --verbose
         timeout-minutes: 45
-        env:
-          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Check full test results
         if: success()
