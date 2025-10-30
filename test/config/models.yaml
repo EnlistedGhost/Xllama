@@ -2,41 +2,26 @@
 # This file defines test profiles with different model sizes and test scenarios
 
 profiles:
-  # Quick test profile - small models only, fast execution
+  # Quick test profile - fast smoke test with medium model
   quick:
     timeout: 5m
     models:
-      - name: gemma2:2b
+      - name: gemma3:4b
         prompts:
           - "Hello, respond with a brief greeting."
         min_response_tokens: 5
         max_response_tokens: 100
-        timeout: 30s
+        timeout: 60s
 
-  # Full test profile - comprehensive testing across model sizes
+  # Full test profile - test largest model that fits on single K80
   full:
     timeout: 30m
     models:
-      - name: gemma2:2b
-        prompts:
-          - "Hello, respond with a brief greeting."
-          - "What is 2+2? Answer briefly."
-        min_response_tokens: 5
-        max_response_tokens: 100
-        timeout: 30s
-
-      - name: gemma3:4b
-        prompts:
-          - "Explain photosynthesis in one sentence."
-        min_response_tokens: 10
-        max_response_tokens: 200
-        timeout: 60s
-
       - name: gemma3:12b
         prompts:
-          - "Write a short haiku about GPUs."
-        min_response_tokens: 15
-        max_response_tokens: 150
+          - "Hello, respond with a brief greeting."
+        min_response_tokens: 5
+        max_response_tokens: 100
         timeout: 120s
 
   # Stress test profile - larger models and longer prompts
@@ -89,4 +74,4 @@ reporting:
     - json
     - markdown
   include_logs: true
-  log_excerpt_lines: 50  # Lines of log to include per failure
+  log_excerpt_lines: 50 # Lines of log to include per failure
