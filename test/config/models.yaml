@@ -1,0 +1,92 @@
+# Test configuration for Tesla K80 model testing
+# This file defines test profiles with different model sizes and test scenarios
+
+profiles:
+  # Quick test profile - small models only, fast execution
+  quick:
+    timeout: 5m
+    models:
+      - name: gemma2:2b
+        prompts:
+          - "Hello, respond with a brief greeting."
+        min_response_tokens: 5
+        max_response_tokens: 100
+        timeout: 30s
+
+  # Full test profile - comprehensive testing across model sizes
+  full:
+    timeout: 30m
+    models:
+      - name: gemma2:2b
+        prompts:
+          - "Hello, respond with a brief greeting."
+          - "What is 2+2? Answer briefly."
+        min_response_tokens: 5
+        max_response_tokens: 100
+        timeout: 30s
+
+      - name: gemma3:4b
+        prompts:
+          - "Explain photosynthesis in one sentence."
+        min_response_tokens: 10
+        max_response_tokens: 200
+        timeout: 60s
+
+      - name: gemma3:12b
+        prompts:
+          - "Write a short haiku about GPUs."
+        min_response_tokens: 15
+        max_response_tokens: 150
+        timeout: 120s
+
+  # Stress test profile - larger models and longer prompts
+  stress:
+    timeout: 60m
+    models:
+      - name: gemma3:12b
+        prompts:
+          - "Write a detailed explanation of how neural networks work, focusing on backpropagation."
+          - "Describe the architecture of a transformer model in detail."
+        min_response_tokens: 50
+        max_response_tokens: 1000
+        timeout: 300s
+
+# Validation rules applied to all tests
+validation:
+  # Require GPU acceleration (fail if CPU fallback detected)
+  gpu_required: true
+
+  # Require single GPU usage for Tesla K80 (detect unnecessary multi-GPU splits)
+  single_gpu_preferred: true
+
+  # Log patterns to check for success/failure
+  check_patterns:
+    success:
+      - "loaded model"
+      - "offload.*GPU"
+      - "CUDA backend"
+    failure:
+      - "CUDA.*error"
+      - "out of memory"
+      - "OOM"
+      - "CPU backend"
+      - "failed to load"
+    warning:
+      - "fallback"
+      - "using CPU"
+
+# Server configuration
+server:
+  host: "localhost"
+  port: 11434
+  startup_timeout: 30s
+  health_check_interval: 1s
+  health_check_endpoint: "/api/tags"
+
+# Reporting configuration
+reporting:
+  formats:
+    - json
+    - markdown
+  include_logs: true
+  log_excerpt_lines: 50  # Lines of log to include per failure
