@@ -33,7 +33,7 @@ func main() {
 	runKeepModels := runCmd.Bool("keep-models", false, "Don't delete models after test")
 
 	// Validate command flags
-	validateConfig := validateCmd.String("config", defaultConfigPath, "Path to test configuration file")
+	validateConfigPath := validateCmd.String("config", defaultConfigPath, "Path to test configuration file")
 
 	// List command flags
 	listConfig := listCmd.String("config", defaultConfigPath, "Path to test configuration file")
@@ -50,7 +50,7 @@ func main() {
 		os.Exit(runTests(*runConfig, *runProfile, *runOllamaBin, *runOutput, *runVerbose, *runKeepModels))
 	case "validate":
 		validateCmd.Parse(os.Args[2:])
-		os.Exit(validateConfig(*validateConfig))
+		os.Exit(validateConfig(*validateConfigPath))
 	case "list":
 		listCmd.Parse(os.Args[2:])
 		os.Exit(listProfiles(*listConfig))
