@@ -52,7 +52,7 @@ jobs:
 
       - name: Validate multi-GPU test configuration
         run: |
-          ./test-runner validate --config test/config/models.yaml --profile multi-gpu
+          ./test-runner validate --config test/config/models.yaml
 
       - name: Run multi-GPU tests
         run: |
