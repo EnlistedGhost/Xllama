@@ -228,11 +228,16 @@ func (v *Validator) validateWithClaude(prompt *PromptTest, simpleCheckPassed boo
 4. Appears to be from a working LLM model (not system errors or failures)
 5. Has reasonable quality for a 4B parameter model
 
-Respond with ONLY one of these formats:
+CRITICAL: Your response MUST start with exactly one of these two words:
 - "PASS" if the response is valid and acceptable
 - "FAIL: <brief reason>" if the response has issues
 
-Be concise. One line only.`)
+Example valid responses:
+- "PASS"
+- "FAIL: Response is gibberish"
+- "FAIL: Contains error messages instead of proper response"
+
+Do NOT include explanations, markdown formatting, or additional text before the verdict. Start your response with PASS or FAIL: only.`)
 
 	// Write to temp file
 	promptFile := filepath.Join(v.claudeTempDir, fmt.Sprintf("prompt_%d.txt", os.Getpid()))
