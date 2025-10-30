@@ -1,10 +1,10 @@
-name: Tesla K80 Build and Test
+name: Tesla K80 Build
 
 on:
   workflow_dispatch: # Manual trigger only
 
 jobs:
-  build-and-test:
+  build:
     runs-on: self-hosted
 
     # Use specific labels if you want to target a particular self-hosted runner
