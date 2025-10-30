@@ -1,4 +1,4 @@
-name: Tesla K80 Tests
+name: Tesla K80 Single-GPU Tests
 
 on:
   workflow_dispatch: # Manual trigger only

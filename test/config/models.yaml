@@ -24,19 +24,40 @@ profiles:
         max_response_tokens: 100
         timeout: 120s
 
-  # Stress test profile - larger models and longer prompts
-  stress:
-    timeout: 60m
+  # Multi-GPU test profile - test models requiring 2x Tesla K80s
+  multi-gpu:
+    timeout: 45m
     models:
-      - name: gemma3:12b
+      - name: gemma3:27b
         prompts:
-          - "Write a detailed explanation of how neural networks work, focusing on backpropagation."
-          - "Describe the architecture of a transformer model in detail."
-        min_response_tokens: 50
-        max_response_tokens: 1000
+          - "Hello, respond with a brief greeting."
+        min_response_tokens: 5
+        max_response_tokens: 100
         timeout: 300s
+      - name: gpt-oss:20b
+        prompts:
+          - "Hello, respond with a brief greeting."
+        min_response_tokens: 5
+        max_response_tokens: 100
+        timeout: 240s
+    validation:
+      # Override single_gpu_preferred for multi-GPU tests
+      gpu_required: true
+      single_gpu_preferred: false
+      check_patterns:
+        success:
+          - "loaded model"
+          - "offload.*GPU"
+          - "CUDA backend"
+          - "split.*layer.*GPU" # Expect multi-GPU split
+        failure:
+          - "CUDA.*error"
+          - "out of memory"
+          - "OOM"
+          - "CPU backend"
+          - "failed to load"
 
-# Validation rules applied to all tests
+# Validation rules applied to all tests (unless overridden in profile)
 validation:
   # Require GPU acceleration (fail if CPU fallback detected)
   gpu_required: true

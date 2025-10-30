@@ -1,0 +1,79 @@
+name: Tesla K80 Multi-GPU Tests
+
+on:
+  workflow_dispatch: # Manual trigger only
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC (less frequent than single-GPU tests)
+    - cron: '0 2 * * 0'
+
+jobs:
+  multi-gpu-test:
+    runs-on: self-hosted
+
+    timeout-minutes: 90 # Longer timeout for large models
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify ollama binary exists
+        run: |
+          if [ ! -f ./ollama ]; then
+            echo "Error: ollama binary not found. Please run the build workflow first."
+            exit 1
+          fi
+          ls -lh ollama
+
+      - name: Verify multi-GPU setup
+        run: |
+          nvidia-smi --list-gpus
+          GPU_COUNT=$(nvidia-smi --list-gpus | wc -l)
+          if [ "$GPU_COUNT" -lt 2 ]; then
+            echo "Error: Multi-GPU tests require at least 2 GPUs. Found: $GPU_COUNT"
+            exit 1
+          fi
+          echo "Found $GPU_COUNT GPUs - proceeding with multi-GPU tests"
+
+      - name: Build test-runner
+        run: |
+          cd cmd/test-runner
+          go mod init github.com/ollama/ollama/cmd/test-runner || true
+          go mod tidy
+          go build -o ../../test-runner .
+          cd ../..
+          ls -lh test-runner
+
+      - name: Validate multi-GPU test configuration
+        run: |
+          ./test-runner validate --config test/config/models.yaml --profile multi-gpu
+
+      - name: Run multi-GPU tests
+        run: |
+          ./test-runner run --profile multi-gpu --config test/config/models.yaml --output test-report-multi-gpu --verbose
+        timeout-minutes: 60
+
+      - name: Check multi-GPU test results
+        run: |
+          if ! jq -e '.summary.failed == 0' test-report-multi-gpu.json; then
+            echo "Multi-GPU tests failed!"
+            jq '.results[] | select(.status == "FAILED")' test-report-multi-gpu.json
+            exit 1
+          fi
+          echo "All multi-GPU tests passed!"
+
+      - name: Display GPU memory usage
+        if: always()
+        run: |
+          echo "=== Final GPU Memory State ==="
+          nvidia-smi
+
+      - name: Upload multi-GPU test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multi-gpu-test-results
+          path: |
+            test-report-multi-gpu.json
+            test-report-multi-gpu.md
+            ollama.log
+          retention-days: 30 # Keep longer for analysis
