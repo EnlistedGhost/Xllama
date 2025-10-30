@@ -148,7 +148,7 @@ func runTests(configPath, profileName, ollamaBin, outputPath string, verbose, ke
 	// Run tests
 	startTime := time.Now()
 	tester := NewModelTester(server.BaseURL())
-	validator := NewValidator(config.Validation, monitor)
+	validator := NewValidator(config.Validation, monitor, verbose)
 
 	results := make([]TestResult, 0, len(profile.Models))
 

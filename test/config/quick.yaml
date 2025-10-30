@@ -5,12 +5,12 @@ profiles:
   quick:
     timeout: 5m
     models:
-      - name: gemma2:2b
+      - name: gemma3:4b
         prompts:
           - "Hello, respond with a brief greeting."
         min_response_tokens: 5
         max_response_tokens: 100
-        timeout: 30s
+        timeout: 60s
 
 validation:
   gpu_required: true

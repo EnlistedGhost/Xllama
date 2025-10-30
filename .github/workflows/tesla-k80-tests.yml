@@ -85,9 +85,3 @@ jobs:
             test-report-full.md
             ollama.log
           retention-days: 14
-
-      - name: Check GPU memory usage
-        if: always()
-        run: |
-          echo "=== GPU Memory Status ==="
-          nvidia-smi --query-gpu=memory.used,memory.total --format=csv
