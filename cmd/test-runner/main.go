@@ -156,8 +156,8 @@ func runTests(configPath, profileName, ollamaBin, outputPath string, verbose, ke
 		fmt.Printf("\n[%d/%d] Testing model: %s\n", i+1, len(profile.Models), modelTest.Name)
 		fmt.Println(strings.Repeat("-", 60))
 
-		// Reset monitor events for this model
-		monitor.Reset()
+		// Don't reset monitor - we want to keep GPU detection events from server startup
+		// monitor.Reset()
 
 		// Run test
 		result := tester.TestModel(ctx, modelTest)
