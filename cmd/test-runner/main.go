@@ -50,7 +50,7 @@ func main() {
 		os.Exit(runTests(*runConfig, *runProfile, *runOllamaBin, *runOutput, *runVerbose, *runKeepModels))
 	case "validate":
 		validateCmd.Parse(os.Args[2:])
-		os.Exit(validateConfig(*validateConfigPath))
+		os.Exit(validateConfigFile(*validateConfigPath))
 	case "list":
 		listCmd.Parse(os.Args[2:])
 		os.Exit(listProfiles(*listConfig))
@@ -199,7 +199,7 @@ func runTests(configPath, profileName, ollamaBin, outputPath string, verbose, ke
 	return 0
 }
 
-func validateConfig(configPath string) int {
+func validateConfigFile(configPath string) int {
 	fmt.Printf("Validating configuration: %s\n", configPath)
 
 	config, err := LoadConfig(configPath)
