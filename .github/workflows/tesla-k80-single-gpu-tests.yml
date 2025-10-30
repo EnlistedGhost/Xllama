@@ -13,11 +13,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download ollama binary from build workflow
-        uses: actions/download-artifact@v4
+      - name: Download ollama binary from latest build
+        uses: dawidd6/action-download-artifact@v6
         with:
+          workflow: tesla-k80-ci.yml
           name: ollama-binary
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          check_artifacts: true
+          search_artifacts: true
 
       - name: Make ollama binary executable
         run: |
