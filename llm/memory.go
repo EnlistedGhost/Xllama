@@ -238,31 +238,7 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		overflow += gpuZeroOverhead
 	}
 
-	// ollama37: Create per-GPU graph allocations for Tesla K80 multi-GPU optimization
-	// Secondary GPUs use measured 190 MiB, primary GPU uses full graph
-	gpuGraphAllocations := make(map[int]uint64)
-	for i := range gpus {
-		if len(gpus) > 1 && i < len(gpus)-1 {
-			// Secondary GPU: use empirically measured value (181 MiB, rounded to 190 MiB)
-			gpuGraphAllocations[i] = 190 * 1024 * 1024
-		} else {
-			// Primary GPU or single GPU: use full graph
-			gpuGraphAllocations[i] = max(graphPartialOffload, graphFullOffload)
-		}
-		slog.Debug("graph allocation per GPU",
-			"gpu", i,
-			"graph_alloc", format.HumanBytes2(gpuGraphAllocations[i]),
-			"is_multi_gpu", len(gpus) > 1,
-			"is_secondary", len(gpus) > 1 && i < len(gpus)-1)
-	}
-
 	// For all the layers, find where they can fit on the GPU(s)
-	slog.Debug("starting layer placement",
-		"total_layers", f.KV().BlockCount(),
-		"num_gpus", len(gpus),
-		"gpus_with_space", len(gpusWithSpace),
-		"overhead", format.HumanBytes2(overhead))
-
 	for i := int(f.KV().BlockCount()) - 1; i >= 0; i-- {
 		// Some models have inconsistent layer sizes
 		if blk, ok := layers[fmt.Sprintf("blk.%d", i)]; ok {
@@ -278,40 +254,17 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		}
 
 		// distribute the layers across the GPU(s) that have space
-		// ollama37: Prefer loading on last GPU first (single-GPU preference for Tesla K80)
-		placed := false
 		for j := len(gpusWithSpace); j > 0; j-- {
-			// Try GPUs in reverse order (highest index first) instead of round-robin
-			g := gpusWithSpace[j-1]
-			used := gpuAllocations[g.i] + gpuGraphAllocations[g.i]  // ollama37: use per-GPU graph allocation
-			required := overhead + used + layerSize
-
-			if i == int(f.KV().BlockCount())-1 || i == int(f.KV().BlockCount())-2 || i == 0 {
-				// Debug log for first 2 and last layer
-				slog.Debug("layer placement attempt",
-					"layer", i,
-					"gpu", g.i,
-					"gpu_free", format.HumanBytes2(g.g.FreeMemory),
-					"overhead", format.HumanBytes2(overhead),
-					"used", format.HumanBytes2(used),
-					"layer_size", format.HumanBytes2(layerSize),
-					"required", format.HumanBytes2(required),
-					"fits", g.g.FreeMemory > required)
-			}
-
+			g := gpusWithSpace[layerCount%j]
+			used := gpuAllocations[g.i] + max(graphPartialOffload, graphFullOffload)
 			if g.g.FreeMemory > overhead+used+layerSize {
 				gpuAllocations[g.i] += layerSize
 				layerCounts[g.i]++
 				layerCount++
-				placed = true
 				break
 			} else {
-				gpusWithSpace = append(gpusWithSpace[:j-1], gpusWithSpace[j:]...)
+				gpusWithSpace = append(gpusWithSpace[:layerCount%j], gpusWithSpace[layerCount%j+1:]...)
 			}
-		}
-
-		if !placed {
-			overflow += layerSize
 		}
 	}
 	if layerCount >= int(f.KV().BlockCount()) {
@@ -320,32 +273,15 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 
 	// Determine if we need to consider output then find where it fits
 	memoryLastLayer := memoryLayerOutput + ollamaEngineProjectorWeights + ollamaEngineProjectorGraph
-	slog.Debug("output layer placement",
-		"memory_last_layer", format.HumanBytes2(memoryLastLayer),
-		"layer_count_before", layerCount,
-		"block_count", f.KV().BlockCount(),
-		"gpus_with_space", len(gpusWithSpace))
-
 	if memoryLastLayer > 0 {
-		outputPlaced := false
 		if opts.NumGPU < 0 || layerCount < opts.NumGPU {
-			// ollama37: Prefer last GPU first (single-GPU preference for Tesla K80)
 			for j := len(gpusWithSpace); j > 0; j-- {
-				g := gpusWithSpace[j-1]  // Try GPUs in reverse order
-
-				// ollama37: Use actual graph allocation (not conservative estimate)
-				// This allows tighter packing on single GPU
-				used := gpuAllocations[g.i] + gpuGraphAllocations[g.i]
-
+				g := gpusWithSpace[layerCount%j]
+				used := gpuAllocations[g.i] + max(graphPartialOffload, graphFullOffload)
 				if g.g.FreeMemory > overhead+used+memoryLastLayer {
 					gpuAllocations[g.i] += memoryLastLayer
 					layerCounts[g.i]++
 					layerCount++
-					outputPlaced = true
-					slog.Debug("output layer placed",
-						"gpu", g.i,
-						"layer_count_after", layerCount,
-						"fully_loaded", layerCount >= int(f.KV().BlockCount())+1)
 					break
 				}
 			}
@@ -354,21 +290,19 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		if layerCount < int(f.KV().BlockCount())+1 {
 			fullyLoaded = false
 			overflow += memoryLastLayer
-			slog.Debug("output layer overflow",
-				"layer_count", layerCount,
-				"required", int(f.KV().BlockCount())+1,
-				"output_placed", outputPlaced)
 		}
 	}
 
 	// Add the applicable (full or partial) graph allocations
-	// ollama37: Use per-GPU graph allocations calculated earlier
-	// Secondary GPUs use measured 190 MiB, primary GPU uses full graph
 	for i := range gpus {
 		if layerCounts[i] <= 0 {
 			continue
 		}
-		gpuAllocations[i] += gpuGraphAllocations[i]
+		if fullyLoaded {
+			gpuAllocations[i] += graphFullOffload
+		} else {
+			gpuAllocations[i] += graphPartialOffload
+		}
 	}
 	if fullyLoaded {
 		graphOffload = graphFullOffload

@@ -110,17 +110,25 @@ These files contain specific line numbers, code blocks, and commands to execute 
 
 ### Memory Estimation Optimization for Single-GPU Preference
 
-**Status**: ✅ **COMPLETED** - Fully implemented and tested (2025-10-30)
+**Status**: ⚠️ **OPTIMIZATIONS REVERTED** - Returned to upstream behavior for stability (2025-10-30)
 
-**Goal**: Eliminate unnecessary multi-GPU splits by fixing graph memory overestimation for Tesla K80.
+**Original Goal**: Eliminate unnecessary multi-GPU splits by fixing graph memory overestimation for Tesla K80.
 
-### Phase 1: Per-GPU Graph Allocation (2025-10-29)
+**Outcome**: Both Phase 1 and Phase 2 optimizations were too aggressive and caused OOM errors on multi-GPU models. Reverted to match upstream Ollama for maximum stability.
 
-**Problem**: Multi-GPU systems allocated full graph memory (1.3 GiB) to EACH GPU, causing 2.6 GiB total overestimation.
+### Phase 1: Per-GPU Graph Allocation (2025-10-29) - REVERTED
 
-**Solution**: Secondary GPUs use 190 MiB, primary GPU uses full 1.3 GiB (based on empirical measurements).
+**Status**: ⚠️ **REVERTED** - Caused insufficient headroom for multi-GPU models (2025-10-30)
 
-**Results**: gemma3:12b split improved from 25,24 → 1,48 layers, but still not single-GPU.
+**Original Goal**: Reduce graph allocation on secondary GPUs from full 1.3 GiB to 190 MiB.
+
+**Original Results**: gemma3:12b split improved from 25,24 → 1,48 layers.
+
+**Problem Discovered**: The 190 MiB optimization left insufficient buffer for runtime allocations (KV cache, execution buffers), causing OOM errors on larger multi-GPU models:
+- gemma3:27b: Failed with only 400 MiB headroom on GPU1
+- Memory estimate: 10.9 GiB, actual usage: 10.8 GiB → 0.4 GiB free → OOM on 6 MiB allocation
+
+**Resolution**: Reverted to upstream Ollama behavior - allocate full graph to ALL GPUs with layers. This matches official Ollama (confirmed via code review of `upstream/main:llm/memory.go`).
 
 ### Phase 2: CC 3.7 Graph Correction Factor (2025-10-30) - DISABLED
 
