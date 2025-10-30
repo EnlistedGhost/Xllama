@@ -32,8 +32,13 @@ func NewValidator(config Validation, logMonitor *LogMonitor, verbose bool) *Vali
 		}
 	}
 
-	// Create temp directory for Claude analysis files
-	tempDir := filepath.Join(os.TempDir(), "test-runner-claude")
+	// Create temp directory for Claude analysis files within the project
+	// Use current working directory to stay within project bounds
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	tempDir := filepath.Join(cwd, ".test-runner-temp")
 	os.MkdirAll(tempDir, 0755)
 
 	return &Validator{
