@@ -170,16 +170,16 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		graphFullOffload = graphPartialOffload
 	}
 
-	// ollama37: Apply empirical correction factor for Tesla K80 (CC 3.7)
-	// Measured: graph estimates are consistently 15-20% higher than actual usage
-	// Example: gemma3:12b estimated 1.3 GiB, actual 1.1 GiB (85% of estimate)
-	if gpus[0].Library == "cuda" && gpus[0].Compute == "3.7" {
-		graphPartialOffload = (graphPartialOffload * 85) / 100
-		graphFullOffload = (graphFullOffload * 85) / 100
-		slog.Debug("applied CC 3.7 graph correction",
-			"partial", format.HumanBytes2(graphPartialOffload),
-			"full", format.HumanBytes2(graphFullOffload))
-	}
+	// ollama37: Phase 2 correction factor DISABLED for multi-GPU compatibility
+	// The 85% reduction was causing multi-GPU models to fail with OOM errors
+	// Phase 1 optimization (per-GPU graph allocation) is sufficient and handles both cases
+	// See: https://github.com/dogkeeper886/ollama37/issues/multi-gpu-oom
+	//
+	// Original Phase 2 code (now disabled):
+	// if gpus[0].Library == "cuda" && gpus[0].Compute == "3.7" {
+	//     graphPartialOffload = (graphPartialOffload * 85) / 100
+	//     graphFullOffload = (graphFullOffload * 85) / 100
+	// }
 
 	// Output layer handled at the end if we have space
 	if layer, ok := layers["output_norm"]; ok {

@@ -122,44 +122,33 @@ These files contain specific line numbers, code blocks, and commands to execute 
 
 **Results**: gemma3:12b split improved from 25,24 → 1,48 layers, but still not single-GPU.
 
-### Phase 2: CC 3.7 Graph Correction Factor (2025-10-30)
+### Phase 2: CC 3.7 Graph Correction Factor (2025-10-30) - DISABLED
 
-**Problem**: Graph estimates were 15-20% higher than actual usage for CC 3.7 GPUs:
-- Estimated: 1.3 GiB
-- Actual: 1.1 GiB
-- This caused gemma3:12b single-GPU check to fail by ~200 MiB margin
+**Status**: ⚠️ **DISABLED** - Caused multi-GPU OOM errors (2025-10-30)
 
-**Root Cause**: Output layer (2.6 GiB) couldn't fit after 48 layers (8.5 GiB) due to overestimated graph overhead.
+**Original Problem**: Graph estimates were 15-20% higher than actual usage for CC 3.7 GPUs, causing gemma3:12b to fail single-GPU check by ~200 MiB margin.
 
-**Solution** (`llm/memory.go:173-182`):
-```go
-// Apply empirical 85% correction factor for Tesla K80 (CC 3.7)
-if gpus[0].Library == "cuda" && gpus[0].Compute == "3.7" {
-    graphPartialOffload = (graphPartialOffload * 85) / 100
-    graphFullOffload = (graphFullOffload * 85) / 100
-}
-```
+**Original Solution**: Applied 85% reduction to graph estimates for CC 3.7 GPUs.
 
-**Results Achieved**:
-- **gemma3:4b**: Single GPU ✅
-- **gemma3:12b**: Single GPU ✅ (was 1,48 split)
-- **Memory estimate**: 11.9 GiB → 11.0 GiB (-900 MiB)
-- **Actual usage**: 10.0 GiB on single GPU
-- **GPU utilization**: 94% during inference
-- **nvidia-smi**: GPU 0: 10,015 MiB, GPU 1: 7 MiB (idle)
+**New Problem Discovered**: The 85% correction was applied unconditionally to ALL models, including those requiring multi-GPU splits. This caused:
+- gemma3:27b: Failed with "cudaMalloc failed: out of memory" on GPU 1 (16 MiB allocation)
+- gpt-oss:20b: Failed with same error (2100 MiB allocation)
+- Root cause: Allocator thought large models fit on single GPU due to reduced estimates
 
-**Technical Details**:
-- Only affects CUDA CC 3.7 GPUs (Tesla K80, K40, M40)
-- No impact on newer GPUs (CC 5.0+)
-- Maintains 10% safety margin between estimate and actual
-- Preserves multi-GPU functionality for models >11 GiB
+**Resolution** (`llm/memory.go:173-182`):
+- Phase 2 correction factor **disabled** (commented out)
+- Phase 1 optimization (per-GPU graph allocation) is sufficient for both single and multi-GPU scenarios
+- Phase 1 correctly allocates:
+  - Single GPU: Full graph on primary GPU
+  - Multi-GPU: 190 MiB on secondary GPUs, full graph on primary GPU
 
-**Benefits**:
-- ✅ gemma3:12b runs on single GPU (no cross-GPU communication)
-- ✅ Faster inference (no tensor split overhead)
-- ✅ Better VRAM utilization
-- ✅ Empirically validated with real measurements
-- ✅ Conservative correction maintains stability
+**Impact**:
+- ✅ gemma3:4b: Still runs on single GPU
+- ✅ gemma3:12b: May split across GPUs (acceptable trade-off)
+- ✅ gemma3:27b: Now works correctly with multi-GPU split
+- ✅ gpt-oss:20b: Now works correctly with multi-GPU split
+
+**Lesson Learned**: Aggressive memory optimizations for single-GPU scenarios must not be applied when multi-GPU splits are required. Phase 1's per-GPU allocation is the correct approach.
 
 ## Model Architecture Compatibility
 
