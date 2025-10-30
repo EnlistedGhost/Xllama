@@ -56,6 +56,9 @@ func (s *Server) Start(ctx context.Context, logPath string) error {
 
 	// Set working directory to binary location
 	s.cmd.Dir = filepath.Dir(binPath)
+	// Inherit environment variables (including LD_LIBRARY_PATH for CUDA libraries)
+	s.cmd.Env = os.Environ()
+
 
 	// Start server
 	if err := s.cmd.Start(); err != nil {
