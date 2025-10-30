@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -95,7 +97,7 @@ func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {
 	return regexps, nil
 }
 
-// Start starts monitoring the log file
+// Start starts monitoring the log file (tail -f style)
 func (m *LogMonitor) Start(ctx context.Context) error {
 	file, err := os.Open(m.logPath)
 	if err != nil {
@@ -103,24 +105,27 @@ func (m *LogMonitor) Start(ctx context.Context) error {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-
-	// Use a larger buffer for long log lines
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
+	reader := bufio.NewReader(file)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if !scanner.Scan() {
-				// No more lines, wait a bit and retry
-				time.Sleep(100 * time.Millisecond)
-				continue
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					// No more data, wait and retry
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return fmt.Errorf("error reading log file: %w", err)
 			}
 
-			line := scanner.Text()
+			// Remove trailing newline
+			line = strings.TrimSuffix(line, "\n")
+			line = strings.TrimSuffix(line, "\r")
+
 			m.processLine(line)
 		}
 	}
