@@ -36,6 +36,13 @@ if (CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
     set(CMAKE_INSTALL_RPATH "@loader_path")
 endif()
 
+# Set RPATH for Linux to find CUDA libraries at runtime
+if (UNIX AND NOT APPLE)
+    set(CMAKE_BUILD_RPATH "$ORIGIN:/usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64")
+    set(CMAKE_INSTALL_RPATH "$ORIGIN:/usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64")
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+endif()
+
 set(OLLAMA_BUILD_DIR ${CMAKE_BINARY_DIR}/lib/ollama)
 set(OLLAMA_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/lib/ollama)
 
