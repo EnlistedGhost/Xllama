@@ -30,6 +30,8 @@ jobs:
           chmod +x ollama
           ls -lh ollama
           ./ollama --version
+        env:
+          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Verify multi-GPU setup
         run: |
@@ -49,15 +51,21 @@ jobs:
           go build -o ../../test-runner .
           cd ../..
           ls -lh test-runner
+        env:
+          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Validate multi-GPU test configuration
         run: |
           ./test-runner validate --config test/config/models.yaml --profile multi-gpu
+        env:
+          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Run multi-GPU tests
         run: |
           ./test-runner run --profile multi-gpu --config test/config/models.yaml --output test-report-multi-gpu --verbose
         timeout-minutes: 60
+        env:
+          LD_LIBRARY_PATH: /usr/local/cuda-11.4/lib64:/usr/local/cuda-11.4/targets/x86_64-linux/lib:/usr/lib64:/usr/local/lib64
 
       - name: Check multi-GPU test results
         run: |
