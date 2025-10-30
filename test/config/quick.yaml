@@ -22,7 +22,8 @@ validation:
     failure:
       - "CUDA.*error"
       - "out of memory"
-      - "CPU backend"
+      - "failed to load.*CUDA"
+      - "no GPU detected"
 
 server:
   host: "localhost"
