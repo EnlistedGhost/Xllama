@@ -24,6 +24,7 @@ This document tracks development goals and notes for this Ollama repository fork
 1. `ml/backend/ggml/ggml/src/ggml-cuda/CMakeLists.txt` - Added 3.7 compute capability to default architecture list
 2. `CMakePresets.json` - Added compute 3.7 to "CUDA 11" preset and created dedicated "CUDA 11 K80" preset
 3. `ml/backend/ggml/ggml/src/CMakeLists.txt` - Enabled Alderlake CPU variant without AVX_VNNI
+4. `ml/backend/ggml/ggml/src/ggml-cuda/ggml-cuda.cu` - Added CUBLAS legacy function fallback for Kepler GPU compatibility
 
 ### Key Changes
 - Added `37-virtual` to CMAKE_CUDA_ARCHITECTURES (using PTX with JIT compilation for better compatibility)
@@ -36,6 +37,33 @@ This document tracks development goals and notes for this Ollama repository fork
 - **CUDA 11.4.4 supports**: 37, 50, 52, 60, 61, 70, 75, 80, 86
 - **CUDA 11.4.4 does NOT support**: 87 (requires 11.7+), 89 (requires 11.8+), 90 (requires 12.0+)
 - CUDA 12+ dropped Kepler support entirely
+
+### Tesla K80 CUBLAS Compatibility
+
+**Challenge**: Tesla K80 (Kepler, compute 3.7) requires special handling for batched matrix multiplication due to:
+1. Lack of Tensor Cores (introduced in Volta, compute 7.0+)
+2. Architectural limitations with modern CUBLAS `*Ex` function variants
+
+**Solution - Two-Tier Fallback Strategy**:
+
+**Tier 1: GEMM Algorithm Selection**
+- Volta+ (cc >= 7.0): Use `CUBLAS_GEMM_DEFAULT_TENSOR_OP` (value 99)
+- Pre-Volta (cc < 7.0): Use `CUBLAS_GEMM_DEFAULT` (value -1)
+
+**Tier 2: CUBLAS Function Selection**
+- **Modern GPUs** (Volta+): Use `cublasGemmStridedBatchedEx` / `cublasGemmBatchedEx`
+  - Support mixed precision, flexible compute types, algorithm selection
+- **Legacy GPUs** (Kepler/Maxwell/Pascal with FP32): Use `cublasSgemmStridedBatched` / `cublasSgemmBatched`
+  - The `*Ex` variants have architectural requirements beyond algorithm selection
+  - Even with `CUBLAS_GEMM_DEFAULT`, `*Ex` functions fail with `CUBLAS_STATUS_ARCH_MISMATCH`
+  - Legacy functions only support FP32, but work reliably on older architectures
+
+**Modified Function**: `ggml_cuda_mul_mat_batched_cublas_impl` in `ml/backend/ggml/ggml/src/ggml-cuda/ggml-cuda.cu:1986`
+
+**Tested Models** (verified on Tesla K80):
+- ✅ gemma3:4b
+- ✅ gpt-oss
+- ✅ deepseek-r1
 
 ## Build Instructions
 
@@ -50,103 +78,64 @@ go clean -cache
 CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CUDA 11"
 
 # Build the C/C++/CUDA libraries
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j 48
 
 # Build the Go binary
 go build -o ollama .
-
-# Verify the build
-./ollama --version
-strings build/lib/ollama/libggml-cuda.so | grep "\.target sm_" | sort -u
 ```
-
-### Alternative: K80-Optimized Build
-
-For smaller binary size (K80 only):
-
-```bash
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CUDA 11 K80"
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
-go build -o ollama .
-```
-
-### Incremental Builds
-
-```bash
-# If you only modified Go code (no C/C++/CUDA changes)
-go build -o ollama .
-
-# If you modified C/C++/CUDA code
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
-go build -o ollama .
-
-# If CMake cache gets corrupted
-go clean -cache
-rm -rf build
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CUDA 11"
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
-go build -o ollama .
-```
-
-## Build Test Results - SUCCESSFUL ✓
-
-Build completed successfully on 2025-11-04.
-
-### Verified Compute Capabilities
-- ✓ sm_37 (Tesla K80 - Kepler) **← YOUR TARGET GPU**
-- ✓ sm_50 (Maxwell)
-- ✓ sm_60 (Pascal P100)
-- ✓ sm_61 (Pascal)
-- ✓ sm_70 (Volta V100)
-- ✓ sm_75 (Turing)
-- ✓ sm_80 (Ampere)
-- ✓ sm_86 (Ampere RTX 3000)
-
-### Build Artifacts
-- CUDA library: `build/lib/ollama/libggml-cuda.so` (283MB)
-- CPU libraries: `build/lib/ollama/libggml-cpu-*.so` (various optimizations)
-- Main executable: `ollama` (59MB)
-
-### Compiler Configuration
-- C Compiler: GCC 10.5.0
-- C++ Compiler: GCC 10.5.0
-- CUDA Host Compiler: GCC 10.5.0
-- CUDA Version: 11.4.48
-- CPU Variants: x64, sse42, sandybridge, haswell, skylakex, icelake, alderlake (without AVX_VNNI)
 
 ## Running Ollama
+
+### Basic Server Start
 
 ```bash
 # Start the Ollama server
 ./ollama serve
 
-# Run with verbose logging
-OLLAMA_DEBUG=1 ./ollama serve
-
-# Quick test without building binary
-go run . serve
-
 # Check GPU detection
 nvidia-smi
 ```
 
-## Verification Commands
+### Debug and Logging Options
+
+**Environment Variables**:
+- `OLLAMA_DEBUG=1` - Enable verbose Ollama server logging
+- `GGML_CUDA_DEBUG=1` - Enable detailed CUDA/CUBLAS operation logging (batched matrix multiplication)
 
 ```bash
-# Check compiler versions
-gcc --version
-g++ --version
-/usr/local/cuda-11.4/bin/nvcc --version
+# Run with Ollama verbose logging only
+OLLAMA_DEBUG=1 ./ollama serve
 
-# Verify CUDA library has correct compute capabilities
-strings build/lib/ollama/libggml-cuda.so | grep "\.target sm_" | sort -u
+# Run with both Ollama and CUDA debug logging
+OLLAMA_DEBUG=1 GGML_CUDA_DEBUG=1 ./ollama serve
 
-# Check ollama binary links correctly
-ldd ollama
+# Capture all output to file
+./ollama serve 2>&1 | tee /tmp/ollama_serve.log
 
-# List all built libraries
-ls -lh build/lib/ollama/
+# Capture only stderr (warnings/errors) to file
+./ollama serve 2> /tmp/ollama_errors.log
+
+# Run in background with full logging
+OLLAMA_DEBUG=1 ./ollama serve 2>&1 | tee /tmp/ollama_full.log &
+
+# Run in background with debug logging
+OLLAMA_DEBUG=1 GGML_CUDA_DEBUG=1 ./ollama serve 2>&1 | tee /tmp/ollama_debug.log &
+
+# Monitor a running background server
+tail -f /tmp/ollama_full.log
+
+# Tail recent log entries
+tail -100 /tmp/ollama_full.log
+
+# Stop all ollama processes
+pkill ollama
 ```
+
+**When to Use GGML_CUDA_DEBUG**:
+- Debugging CUBLAS errors on Tesla K80 or other legacy GPUs
+- Verifying compute capability detection
+- Troubleshooting batched matrix multiplication issues
+- Understanding which CUBLAS functions are being used (legacy vs Ex variants)
 
 ## CPU Architecture Compatibility
 
@@ -187,20 +176,3 @@ This build faces a fundamental compatibility constraint:
 | Alderlake (2021) | alderlake | ⚠️ Partial | Missing AVX_VNNI only |
 | Raptor Lake (2022) | alderlake | ⚠️ Partial | Missing AVX_VNNI only |
 
-### Alternative Solutions
-
-**Option A: Separate CPU-only build**
-```bash
-# Use GCC 11+ for CPU-only build (no CUDA)
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CPU"  # hypothetical CPU-only preset
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build
-```
-
-**Option B: Upgrade GPU**
-- Use GPU with Ampere/Ada architecture (compute 8.0+)
-- Supports driver 525+ → CUDA 12+ → GCC 11+
-- Enables full AVX_VNNI support
-
-**Option C: Accept the limitation**
-- Current setup provides good performance for most workloads
-- The 3-7% performance difference is acceptable for many use cases

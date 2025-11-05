@@ -171,8 +171,29 @@ func signinURL() (string, error) {
 	return fmt.Sprintf(signinURLStr, url.PathEscape(h), encKey), nil
 }
 
+// GenerateHandler is the HTTP handler for POST /api/generate endpoint
+// This is the main server-side entry point for model inference requests
+//
+// Flow:
+// 1. Parse and validate the GenerateRequest JSON body
+// 2. Load model metadata (config, template, system prompt)
+// 3. Schedule/acquire a runner instance from the scheduler
+// 4. Apply chat template to format the prompt
+// 5. Call runner's Completion() method for actual inference
+// 6. Stream responses back to client as Server-Sent Events (SSE)
+//
+// Request structure (api.GenerateRequest):
+//   - Model: string (e.g., "gemma3", "llama3")
+//   - Prompt: string (user input)
+//   - Images: []string (base64 for multimodal models)
+//   - System: string (system prompt override)
+//   - Template: string (template override)
+//   - Options: map[string]any (temperature, top_p, num_gpu, etc.)
+//   - KeepAlive: Duration (how long to keep model in memory)
 func (s *Server) GenerateHandler(c *gin.Context) {
 	checkpointStart := time.Now()
+
+	// Parse JSON request body into GenerateRequest struct
 	var req api.GenerateRequest
 	if err := c.ShouldBindJSON(&req); errors.Is(err, io.EOF) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "missing request body"})
@@ -182,6 +203,7 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 		return
 	}
 
+	// Parse and validate model name (format: [registry/][namespace/]model[:tag])
 	name := model.ParseName(req.Model)
 	if !name.IsValid() {
 		// Ideally this is "invalid model name" but we're keeping with
@@ -190,6 +212,7 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 		return
 	}
 
+	// Resolve the actual model name (handles aliases and version resolution)
 	// We cannot currently consolidate this into GetModel because all we'll
 	// induce infinite recursion given the current code structure.
 	name, err := getExistingName(name)
@@ -198,6 +221,13 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 		return
 	}
 
+	// Load model metadata from disk (server/images.go:320)
+	// This reads the GGUF file headers and Modelfile to extract:
+	// - Model config (architecture, quantization, context size)
+	// - Chat template (how to format messages for this model)
+	// - System prompt (default instructions)
+	// - Model capabilities (vision, tools, thinking)
+	// - Model options (temperature defaults, etc.)
 	m, err := GetModel(name.String())
 	if err != nil {
 		switch {
@@ -357,6 +387,23 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 		}
 	}
 
+	// Schedule a runner instance from the scheduler (server/sched.go:84)
+	// This is THE critical step that loads the model into memory
+	//
+	// The scheduler will:
+	// 1. Check if model is already loaded in memory (cache hit)
+	// 2. If not loaded:
+	//    a. Analyze GGML file to determine layer distribution (CPU vs GPU)
+	//    b. Spawn a runner subprocess: "ollama runner --model <path> --port <port>"
+	//    c. Load GGUF weights into memory via llama.cpp
+	//    d. Allocate KV cache on GPU (if using GPU)
+	//    e. Initialize inference context
+	// 3. Return (LlamaServer, Model, Options) tuple
+	//
+	// Parameters:
+	// - caps: required capabilities (completion, vision, thinking, etc.)
+	// - req.Options: user-provided options (num_gpu, temperature, etc.)
+	// - req.KeepAlive: how long to keep model loaded after request completes
 	r, m, opts, err := s.scheduleRunner(c.Request.Context(), name.String(), caps, req.Options, req.KeepAlive)
 	if errors.Is(err, errCapabilityCompletion) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("%q does not support generate", req.Model)})
@@ -368,7 +415,8 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 
 	checkpointLoaded := time.Now()
 
-	// load the model
+	// If prompt is empty, this is just a model load request (warmup)
+	// Return immediately without running inference
 	if req.Prompt == "" {
 		c.JSON(http.StatusOK, api.GenerateResponse{
 			Model:      req.Model,
@@ -384,13 +432,20 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 		return
 	}
 
+	// Prepare image data for multimodal models (if any)
 	images := make([]llm.ImageData, len(req.Images))
 	for i := range req.Images {
 		images[i] = llm.ImageData{ID: i, Data: req.Images[i]}
 	}
 
+	// Apply chat template to format the prompt
+	// Chat templates convert structured messages into model-specific format
+	// Example for Gemma3:
+	//   Input: [{"role": "user", "content": "Hello"}]
+	//   Output: "<bos><start_of_turn>user\nHello<end_of_turn>\n<start_of_turn>model\n"
 	prompt := req.Prompt
 	if !req.Raw {
+		// Get template from model config (or use override from request)
 		tmpl := m.Template
 		if req.Template != "" {
 			tmpl, err = template.Parse(req.Template)
@@ -402,20 +457,25 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 
 		var values template.Values
 		if req.Suffix != "" {
+			// Fill-in-the-middle mode (for code completion)
 			values.Prompt = prompt
 			values.Suffix = req.Suffix
 		} else {
+			// Normal chat mode: build message list
 			var msgs []api.Message
+			// Add system prompt (instructions for the model)
 			if req.System != "" {
 				msgs = append(msgs, api.Message{Role: "system", Content: req.System})
 			} else if m.System != "" {
 				msgs = append(msgs, api.Message{Role: "system", Content: m.System})
 			}
 
+			// Add conversation history (for multi-turn chats)
 			if req.Context == nil {
 				msgs = append(msgs, m.Messages...)
 			}
 
+			// Add current user message with any images
 			userMsg := api.Message{Role: "user", Content: req.Prompt}
 			for _, i := range images {
 				userMsg.Images = append(userMsg.Images, i.Data)
@@ -495,11 +555,31 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 		}
 	}
 
+	// Create channel for streaming responses from inference engine
 	ch := make(chan any)
 	go func() {
 		// TODO (jmorganca): avoid building the response twice both here and below
 		var sb strings.Builder
 		defer close(ch)
+
+		// *** THIS IS THE CORE INFERENCE CALL ***
+		// r.Completion() bridges Go → runner subprocess → C/C++ → CUDA
+		//
+		// Flow:
+		// 1. This sends HTTP POST to runner subprocess at http://127.0.0.1:<port>/completion
+		// 2. Runner subprocess (llamarunner/runner.go) receives request
+		// 3. Runner tokenizes prompt and creates inference batch
+		// 4. Runner calls context.Decode() repeatedly (llama/llama.go CGO binding)
+		// 5. context.Decode() calls C.llama_decode() from llama.cpp
+		// 6. llama_decode() executes CUDA kernels on GPU (Tesla K80 compute 3.7)
+		// 7. Each generated token is sampled and streamed back via callback
+		//
+		// CompletionRequest fields:
+		// - Prompt: formatted text (after template application)
+		// - Images: base64 image data (for vision models)
+		// - Options: temperature, top_p, top_k, num_gpu, etc.
+		// - Shift: whether to shift context window when full
+		// - Truncate: whether to truncate prompt if too long
 		if err := r.Completion(c.Request.Context(), llm.CompletionRequest{
 			Prompt:   prompt,
 			Images:   images,
@@ -508,6 +588,7 @@ func (s *Server) GenerateHandler(c *gin.Context) {
 			Shift:    req.Shift == nil || *req.Shift,
 			Truncate: req.Truncate == nil || *req.Truncate,
 		}, func(cr llm.CompletionResponse) {
+			// Callback function called for each generated token (streaming)
 			res := api.GenerateResponse{
 				Model:     req.Model,
 				CreatedAt: time.Now().UTC(),

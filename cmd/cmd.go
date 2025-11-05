@@ -322,11 +322,18 @@ func StopHandler(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// RunHandler is the entry point for "ollama run <model>" command
+// This function orchestrates the entire model execution flow:
+// 1. Parse command-line arguments and options (format, keepalive, think mode, etc.)
+// 2. Determine if running in interactive or non-interactive mode
+// 3. Query model info from server (or pull if not found)
+// 4. Route to either generateInteractive() or generate() based on mode
 func RunHandler(cmd *cobra.Command, args []string) error {
+	// Default to interactive mode unless prompt is provided or output is piped
 	interactive := true
 
 	opts := runOptions{
-		Model:       args[0],
+		Model:       args[0], // Model name (e.g., "gemma3")
 		WordWrap:    os.Getenv("TERM") == "xterm-256color",
 		Options:     map[string]any{},
 		ShowConnect: true,
@@ -379,7 +386,8 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 
 	prompts := args[1:]
-	// prepend stdin to the prompt if provided
+	// Check if stdin contains input (e.g., piped data: echo "hello" | ollama run gemma3)
+	// If so, prepend it to the prompt and switch to non-interactive mode
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		in, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -392,10 +400,12 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 		interactive = false
 	}
 	opts.Prompt = strings.Join(prompts, " ")
+	// If prompt provided as argument (e.g., ollama run gemma3 "tell me a joke")
+	// then use non-interactive mode (single-shot generation)
 	if len(prompts) > 0 {
 		interactive = false
 	}
-	// Be quiet if we're redirecting to a pipe or file
+	// If stdout is redirected to a pipe or file, use non-interactive mode
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		interactive = false
 	}
@@ -406,22 +416,30 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 	opts.WordWrap = !nowrap
 
-	// Fill out the rest of the options based on information about the
-	// model.
+	// Create HTTP client to communicate with Ollama server
+	// The server must be running (started via "ollama serve")
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		return err
 	}
 
+	// Query model metadata from server (HTTP GET /api/show)
+	// This retrieves:
+	// - Model capabilities (vision, tools, thinking)
+	// - Model parameters (context size, architecture)
+	// - Chat template format
+	// If model not found locally, automatically pull from registry
 	name := args[0]
 	info, err := func() (*api.ShowResponse, error) {
 		showReq := &api.ShowRequest{Name: name}
 		info, err := client.Show(cmd.Context(), showReq)
 		var se api.StatusError
 		if errors.As(err, &se) && se.StatusCode == http.StatusNotFound {
+			// Model not found locally, pull it from registry
 			if err := PullHandler(cmd, []string{name}); err != nil {
 				return nil, err
 			}
+			// Retry after successful pull
 			return client.Show(cmd.Context(), &api.ShowRequest{Name: name})
 		}
 		return info, err
@@ -435,6 +453,8 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Detect if model supports multimodal input (images + text)
+	// Used for models like LLaVA, Bakllava, or vision-capable models
 	opts.MultiModal = slices.Contains(info.Capabilities, model.CapabilityVision)
 
 	// TODO: remove the projector info and vision info checks below,
@@ -453,6 +473,8 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	opts.ParentModel = info.Details.ParentModel
 
 	if interactive {
+		// In interactive mode, load the model into memory first
+		// This sends a load request to the server, which triggers the scheduler
 		if err := loadOrUnloadModel(cmd, &opts); err != nil {
 			var sErr api.AuthorizationError
 			if errors.As(err, &sErr) && sErr.StatusCode == http.StatusUnauthorized {
@@ -466,6 +488,7 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		// Display any previous conversation history (for multi-turn chats)
 		for _, msg := range info.Messages {
 			switch msg.Role {
 			case "user":
@@ -478,8 +501,12 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Enter interactive REPL mode (Read-Eval-Print Loop)
+		// User can enter multiple prompts in sequence
 		return generateInteractive(cmd, opts)
 	}
+	// Non-interactive mode: single generation then exit
+	// Used for: ollama run gemma3 "prompt here"
 	return generate(cmd, opts)
 }
 

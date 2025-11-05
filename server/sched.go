@@ -380,12 +380,31 @@ func (pending *LlmRequest) useLoadedRunner(runner *runnerRef, finished chan *Llm
 	}()
 }
 
-// load creates a new model based on req and loads it. If requireFull is true then the model must be loaded fully onto GPUs
-// (if any). Returns whether the scheduler needs to evict a model to make this one fit.
+// load creates a new model based on req and loads it into memory
+//
+// This is THE critical function that:
+// 1. Spawns the runner subprocess (ollama runner --model <path>)
+// 2. Loads GGUF weights into memory via llama.cpp
+// 3. Distributes model layers across CPU/GPU(s) based on available VRAM
+// 4. Allocates KV cache on GPU (for Tesla K80: compute 3.7)
+// 5. Initializes inference context with threading and batch parameters
+//
+// Parameters:
+// - req: LlmRequest containing model path, options, capabilities
+// - f: GGML metadata (parsed from GGUF file headers)
+// - systemInfo: CPU/RAM information
+// - gpus: List of available GPUs (e.g., Tesla K80)
+// - requireFull: If true, model must fit entirely on GPU(s)
+//
+// Returns:
+// - bool: true if scheduler needs to evict other models to make room
 func (s *Scheduler) load(req *LlmRequest, f *ggml.GGML, systemInfo ml.SystemInfo, gpus []ml.DeviceInfo, requireFull bool) bool {
+	// NumParallel controls how many requests can be processed simultaneously
+	// Each parallel slot requires additional KV cache memory
 	numParallel := max(int(envconfig.NumParallel()), 1)
 
 	// Embedding models should always be loaded with parallel=1
+	// (they don't benefit from parallel processing like generation does)
 	if req.model.CheckCapabilities(model.CapabilityCompletion) != nil {
 		numParallel = 1
 	}
@@ -405,8 +424,27 @@ func (s *Scheduler) load(req *LlmRequest, f *ggml.GGML, systemInfo ml.SystemInfo
 	s.loadedMu.Lock()
 	llama := s.activeLoading
 
+	// Create new llama server instance if not already loading
 	if llama == nil {
 		var err error
+		// *** SPAWN RUNNER SUBPROCESS ***
+		// s.newServerFn points to NewLlamaServer() in llm/server.go:148
+		//
+		// This function:
+		// 1. Calculates memory requirements from GGML metadata
+		// 2. Determines GPU layer distribution (num_gpu_layers)
+		// 3. Spawns subprocess: exec.Command("ollama", "runner", "--model", modelPath, "--port", port)
+		// 4. Subprocess starts HTTP server listening on local port
+		// 5. Returns LlamaServer interface for IPC communication
+		//
+		// Parameters:
+		// - systemInfo: CPU/RAM stats
+		// - gpus: Available GPUs (Tesla K80 with 12GB VRAM, compute 3.7)
+		// - ModelPath: Path to GGUF file (e.g., ~/.ollama/models/blobs/sha256-abc123...)
+		// - AdapterPaths: LoRA adapters (if any)
+		// - ProjectorPaths: Vision projectors for multimodal (if any)
+		// - opts: User options (num_gpu, num_thread, num_ctx, etc.)
+		// - numParallel: How many parallel inference slots to allocate
 		llama, err = s.newServerFn(systemInfo, gpus, req.model.ModelPath, f, req.model.AdapterPaths, req.model.ProjectorPaths, req.opts, numParallel)
 		if err != nil {
 			// some older models are not compatible with newer versions of llama.cpp
@@ -423,6 +461,7 @@ func (s *Scheduler) load(req *LlmRequest, f *ggml.GGML, systemInfo ml.SystemInfo
 
 		s.activeLoading = llama
 	} else {
+		// Reusing existing server (e.g., after eviction attempt failed)
 		if s.activeLoading.ModelPath() != req.model.ModelPath {
 			panic(fmt.Errorf("attempting to load different model after eviction (original %v new %v)", s.activeLoading.ModelPath(), req.model.ModelPath))
 		}
@@ -430,16 +469,28 @@ func (s *Scheduler) load(req *LlmRequest, f *ggml.GGML, systemInfo ml.SystemInfo
 
 	s.loadedMu.Unlock()
 
+	// *** LOAD MODEL WEIGHTS INTO MEMORY ***
+	// llama.Load() triggers the runner subprocess to:
+	// 1. Call llama_model_load_from_file() via CGO (llama/llama.go)
+	// 2. Read GGUF file and mmap() weights into memory
+	// 3. Distribute layers across CPU/GPU based on num_gpu_layers
+	// 4. Allocate KV cache on GPU (if using GPU)
+	// 5. Compile CUDA kernels for Tesla K80 (compute 3.7, via PTX JIT)
+	//
+	// Returns:
+	// - gpuIDs: List of GPU device IDs where model layers were loaded
+	// - err: Error if model doesn't fit or loading fails
 	gpuIDs, err := llama.Load(req.ctx, systemInfo, gpus, requireFull)
 	if err != nil {
 		if errors.Is(err, llm.ErrLoadRequiredFull) {
 			if !requireFull {
-				// No other models loaded, yet we still don't fit, so report an error
+				// Model doesn't fit fully on GPU, need to evict other models
 				slog.Info("model is too large for system memory", "requireFull", requireFull)
 				s.activeLoading.Close()
 				s.activeLoading = nil
 				req.errCh <- err
 			}
+			// Signal scheduler to evict models and retry
 			return true
 		}
 

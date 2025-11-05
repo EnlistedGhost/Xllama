@@ -1397,10 +1397,32 @@ type CompletionResponse struct {
 	EvalDuration       time.Duration `json:"eval_duration"`
 }
 
+// Completion is the bridge between Go and the runner subprocess
+//
+// This function sends an HTTP POST request to the runner subprocess
+// and streams back the generated tokens in real-time.
+//
+// Flow:
+// 1. Validate and prepare request (grammar, options)
+// 2. Acquire semaphore (limit concurrent requests to runner)
+// 3. Send HTTP POST to http://127.0.0.1:<port>/completion
+// 4. Runner subprocess receives request and starts generation loop
+// 5. Stream back CompletionResponse objects (one per token or batch)
+// 6. Call callback function fn() for each response chunk
+//
+// Parameters:
+// - ctx: Context (for cancellation)
+// - req: CompletionRequest (prompt, images, options)
+// - fn: Callback function called for each generated token/chunk
+//
+// Returns:
+// - error: If request fails or is cancelled
 func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn func(CompletionResponse)) error {
 	slog.Debug("completion request", "images", len(req.Images), "prompt", len(req.Prompt), "format", string(req.Format))
 	logutil.Trace("completion request", "prompt", req.Prompt)
 
+	// Handle JSON output format constraints
+	// If user requests JSON output, apply grammar to constrain generation
 	if len(req.Format) > 0 {
 		switch string(req.Format) {
 		case `null`, `""`:
@@ -1408,13 +1430,15 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 			// these as "not set".
 			break
 		case `"json"`:
+			// Use built-in JSON grammar
 			req.Grammar = grammarJSON
 		default:
 			if req.Format[0] != '{' {
 				return fmt.Errorf("invalid format: %q; expected \"json\" or a valid JSON Schema object", req.Format)
 			}
 
-			// User provided a JSON schema
+			// User provided a JSON schema - convert to GBNF grammar
+			// This constrains the model to only generate valid JSON matching the schema
 			g := llama.SchemaToGrammar(req.Format)
 			if g == nil {
 				return fmt.Errorf("invalid JSON schema in format")
@@ -1428,6 +1452,9 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 		req.Options = &opts
 	}
 
+	// Acquire semaphore to limit concurrent requests
+	// The runner subprocess can only handle numParallel requests at once
+	// (each parallel slot requires separate KV cache allocation)
 	if err := s.sem.Acquire(ctx, 1); err != nil {
 		if errors.Is(err, context.Canceled) {
 			slog.Info("aborting completion request due to client closing the connection")
@@ -1443,7 +1470,8 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 		req.Options.NumPredict = 10 * s.options.NumCtx
 	}
 
-	// Make sure the server is ready
+	// Wait for runner subprocess to be ready
+	// The subprocess may still be loading weights into memory
 	status, err := s.getServerStatusRetry(ctx)
 	if err != nil {
 		return err
@@ -1451,7 +1479,8 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 		return fmt.Errorf("unexpected server status: %s", status)
 	}
 
-	// Handling JSON marshaling with special characters unescaped.
+	// Marshal CompletionRequest to JSON
+	// Use SetEscapeHTML(false) to avoid escaping special characters
 	buffer := &bytes.Buffer{}
 	enc := json.NewEncoder(buffer)
 	enc.SetEscapeHTML(false)
@@ -1460,6 +1489,16 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 		return fmt.Errorf("failed to marshal data: %v", err)
 	}
 
+	// *** SEND HTTP POST TO RUNNER SUBPROCESS ***
+	// This is IPC (Inter-Process Communication) between:
+	// - Parent: Ollama server (this process)
+	// - Child: Runner subprocess (spawned by scheduler)
+	//
+	// The runner listens on 127.0.0.1:<random_port> with endpoints:
+	// - POST /completion  - text generation (this call)
+	// - POST /embedding   - generate embeddings
+	// - POST /tokenize    - tokenize text
+	// - GET  /health      - health check
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d/completion", s.port)
 	serverReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, buffer)
 	if err != nil {
@@ -1467,6 +1506,7 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 	}
 	serverReq.Header.Set("Content-Type", "application/json")
 
+	// Execute HTTP request to runner subprocess
 	res, err := http.DefaultClient.Do(serverReq)
 	if err != nil && errors.Is(err, context.Canceled) {
 		// client closed connection
@@ -1486,6 +1526,20 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 		return api.StatusError{StatusCode: res.StatusCode, ErrorMessage: strings.TrimSpace(string(bodyBytes))}
 	}
 
+	// *** STREAM RESPONSE BACK FROM RUNNER ***
+	// The runner subprocess streams generated tokens back line-by-line
+	// Each line is a JSON CompletionResponse object
+	//
+	// Response flow:
+	// 1. Runner tokenizes prompt
+	// 2. Runner creates inference batch
+	// 3. For each generation step:
+	//    a. Call context.Decode() -> C.llama_decode() -> CUDA kernel
+	//    b. Get logits from model output
+	//    c. Apply sampling (temperature, top_p, top_k)
+	//    d. Select next token
+	//    e. Stream CompletionResponse{"content": "token_text", "done": false}
+	// 4. When complete, send final response with "done": true and metrics
 	scanner := bufio.NewScanner(res.Body)
 	buf := make([]byte, 0, maxBufferSize)
 	scanner.Buffer(buf, maxBufferSize)
@@ -1505,15 +1559,27 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 				continue
 			}
 
+			// Handle Server-Sent Events format (optional "data: " prefix)
 			evt, ok := bytes.CutPrefix(line, []byte("data: "))
 			if !ok {
 				evt = line
 			}
 
+			// Parse CompletionResponse from JSON
+			// Fields:
+			// - Content: generated token(s) as string
+			// - Done: true if generation complete
+			// - DoneReason: "stop", "length", or "connection_closed"
+			// - PromptEvalCount: tokens in prompt
+			// - PromptEvalDuration: time to process prompt
+			// - EvalCount: tokens generated
+			// - EvalDuration: time to generate tokens
 			var c CompletionResponse
 			if err := json.Unmarshal(evt, &c); err != nil {
 				return fmt.Errorf("error unmarshalling llm prediction response: %v", err)
 			}
+
+			// Detect infinite loops (model repeating same token)
 			switch {
 			case strings.TrimSpace(c.Content) == lastToken:
 				tokenRepeat++
@@ -1528,12 +1594,14 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 				return ctx.Err()
 			}
 
+			// Call callback function for each generated token
 			if c.Content != "" {
 				fn(CompletionResponse{
 					Content: c.Content,
 				})
 			}
 
+			// Final response includes all metrics
 			if c.Done {
 				fn(c)
 				return nil

@@ -1,3 +1,18 @@
+// Package llama provides Go bindings to llama.cpp via CGO
+//
+// This is the bridge between Go code and C/C++/CUDA inference engine.
+// All actual model inference happens through these CGO calls.
+//
+// Key components:
+// - LoadModelFromFile(): Loads GGUF model file into memory
+// - Context.Decode(): Runs inference (GPU/CPU matrix operations)
+// - SamplingContext: Selects next token from logits
+// - Batch: Groups tokens for efficient parallel processing
+//
+// For Tesla K80 (compute 3.7):
+// - CUDA kernels compiled with PTX (JIT at runtime)
+// - Model layers distributed across CPU/GPU based on num_gpu_layers
+// - KV cache allocated on GPU VRAM (12GB available)
 package llama
 
 /*
@@ -12,13 +27,12 @@ package llama
 #cgo CPPFLAGS: -I${SRCDIR}/../ml/backend/ggml/ggml/include
 
 #include <stdlib.h>
-#include "ggml.h"
-#include "llama.h"
-#include "mtmd.h"
+#include "ggml.h"       // GGML tensor library (CPU/GPU operations)
+#include "llama.h"      // llama.cpp model loading and inference
+#include "mtmd.h"       // Multi-turn multi-document support
 #include "mtmd-helper.h"
-#include "gguf.h"
-
-#include "sampling_ext.h"
+#include "gguf.h"       // GGUF file format parsing
+#include "sampling_ext.h" // Token sampling (temperature, top_p, etc.)
 
 extern bool llamaProgressCallback(float progress, void *user_data);
 extern void llamaLog(int level, char* text, void* user_data);
@@ -58,9 +72,22 @@ func llamaLog(level C.int, text *C.char, _ unsafe.Pointer) {
 	}
 }
 
+// BackendInit initializes the llama.cpp backend
+//
+// This must be called once before loading any models.
+// It initializes:
+// - CUDA backend (if GPUs available)
+// - CPU backend
+// - Memory allocators
+// - Threading infrastructure
+//
+// For Tesla K80 (compute 3.7):
+// - Detects CUDA device
+// - Verifies compute capability support
+// - Initializes cuBLAS for matrix operations
 func BackendInit() {
-	ggml.OnceLoad()
-	C.llama_backend_init()
+	ggml.OnceLoad() // Load GGML shared library
+	C.llama_backend_init() // Initialize llama.cpp backend
 }
 
 func EnumerateGPUs() []ml.DeviceID {
@@ -145,15 +172,50 @@ func kvCacheTypeFromStr(s string) C.enum_ggml_type {
 	}
 }
 
+// Context represents an active inference context
+//
+// This wraps llama.cpp's llama_context which holds:
+// - Model pointer
+// - KV cache (key-value cache for attention)
+// - Thread pool for CPU operations
+// - RNG state for sampling
+//
+// Each Context can handle multiple parallel sequences (controlled by numParallel)
 type Context struct {
-	c          *C.struct_llama_context
-	numThreads int
+	c          *C.struct_llama_context // C pointer to llama_context
+	numThreads int                     // Number of CPU threads for inference
 }
 
 var ErrKvCacheFull = errors.New("could not find a kv cache slot")
 
+// Decode runs one inference step on a batch of tokens
+//
+// *** THIS IS WHERE ACTUAL INFERENCE HAPPENS ***
+//
+// For each token in the batch, this:
+// 1. Retrieves token embeddings from model
+// 2. Runs through transformer layers:
+//    - Attention (uses KV cache)
+//    - Feed-forward network
+//    - Layer normalization
+// 3. Stores KV states in cache for future tokens
+// 4. Produces output logits (probabilities for next token)
+//
+// GPU execution (Tesla K80, compute 3.7):
+// - Matrix multiplications via cuBLAS
+// - Attention via CUDA kernels
+// - LayerNorm/RoPE/Softmax via CUDA kernels
+// - Data transferred between CPU/GPU as needed
+//
+// Returns:
+// - nil: success
+// - ErrKvCacheFull: no space in KV cache (increase num_ctx or reduce batch size)
+// - error: fatal error during inference
 func (c *Context) Decode(batch *Batch) error {
-	// Positive return values does not mean a fatal error, but rather a warning.
+	// Call C function: int llama_decode(llama_context*, llama_batch)
+	// This executes the actual neural network forward pass
+	//
+	// Return codes:
 	//   0 - success
 	//   1 - could not find a KV slot for the batch (try reducing the size of the batch or increase the context)
 	// < 0 - error
@@ -234,13 +296,48 @@ func llamaProgressCallback(progress C.float, userData unsafe.Pointer) C.bool {
 	return true
 }
 
+// LoadModelFromFile loads a GGUF model file into memory
+//
+// *** THIS IS THE CORE MODEL LOADING FUNCTION ***
+//
+// This reads the GGUF file and loads model weights into memory.
+// The process:
+// 1. Parse GGUF file headers (metadata, architecture, tensors)
+// 2. Memory-map (mmap) or read model weights
+// 3. Distribute layers across devices based on NumGpuLayers:
+//    - First NumGpuLayers transformer layers → GPU
+//    - Remaining layers → CPU
+//    - Embeddings and output layer handling varies
+// 4. Allocate device buffers for tensors
+//
+// For Tesla K80 (compute 3.7) with 12GB VRAM:
+// - Example: gemma3-2b with Q4_0 quantization
+//   - Full model ~1.5GB, can fit entirely on GPU (NumGpuLayers=99)
+// - Example: llama3-8b with Q4_0 quantization
+//   - Full model ~4.5GB, can fit entirely on GPU
+// - Example: llama3-70b with Q4_0 quantization
+//   - Full model ~40GB, needs CPU offload (NumGpuLayers=20-30)
+//
+// Parameters:
+// - modelPath: Path to GGUF file (e.g., ~/.ollama/models/blobs/sha256-abc123...)
+// - params.NumGpuLayers: How many transformer layers to put on GPU
+// - params.MainGpu: Which GPU to use (if multiple)
+// - params.TensorSplit: How to split layers across multiple GPUs
+// - params.UseMmap: Whether to use memory mapping (faster load, less RAM)
+//
+// Returns:
+// - *Model: Loaded model ready for inference
+// - error: If file not found, incompatible format, or out of memory
 func LoadModelFromFile(modelPath string, params ModelParams) (*Model, error) {
+	// Initialize C parameters structure
 	cparams := C.llama_model_default_params()
-	cparams.n_gpu_layers = C.int(params.NumGpuLayers)
-	cparams.main_gpu = C.int32_t(params.MainGpu)
-	cparams.use_mmap = C.bool(params.UseMmap)
-	cparams.vocab_only = C.bool(params.VocabOnly)
+	cparams.n_gpu_layers = C.int(params.NumGpuLayers) // Layers to offload to GPU
+	cparams.main_gpu = C.int32_t(params.MainGpu)       // Primary GPU device ID
+	cparams.use_mmap = C.bool(params.UseMmap)          // Memory-map file (faster)
+	cparams.vocab_only = C.bool(params.VocabOnly)      // Load vocabulary only
 
+	// Multi-GPU tensor split (for systems with multiple GPUs)
+	// Defines proportion of model to put on each GPU
 	if len(params.TensorSplit) > 0 {
 		tensorSplitData := &params.TensorSplit[0]
 
@@ -251,6 +348,7 @@ func LoadModelFromFile(modelPath string, params ModelParams) (*Model, error) {
 		cparams.tensor_split = (*C.float)(unsafe.Pointer(tensorSplitData))
 	}
 
+	// Progress callback (reports loading progress percentage)
 	if params.Progress != nil {
 		handle := cgo.NewHandle(params.Progress)
 		defer handle.Delete()
@@ -263,6 +361,12 @@ func LoadModelFromFile(modelPath string, params ModelParams) (*Model, error) {
 		cparams.progress_callback_user_data = unsafe.Pointer(&handle)
 	}
 
+	// *** CALL C FUNCTION TO LOAD MODEL ***
+	// This:
+	// 1. Opens and parses GGUF file
+	// 2. Allocates CPU/GPU memory for tensors
+	// 3. Loads/mmaps weights into memory
+	// 4. For Tesla K80: compiles CUDA kernels via PTX JIT (compute 3.7)
 	m := Model{c: C.llama_model_load_from_file(C.CString(modelPath), cparams)}
 	if m.c == nil {
 		return nil, fmt.Errorf("unable to load model: %s", modelPath)
