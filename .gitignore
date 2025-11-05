@@ -6,6 +6,7 @@
 dist
 build
 .cache
+.gocache
 *.exe
 .idea
 test_data
@@ -14,4 +15,3 @@ __debug_bin*
 llama/build
 llama/vendor
 /ollama
-.test-runner-temp
