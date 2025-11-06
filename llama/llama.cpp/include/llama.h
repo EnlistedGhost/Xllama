@@ -1370,6 +1370,28 @@ extern "C" {
     // print a breakdown of per-device memory use via LLAMA_LOG:
     LLAMA_API void llama_memory_breakdown_print(const struct llama_context * ctx);
 
+    // Memory measurement for GPU selection:
+    // This struct holds measured memory requirements per backend device.
+    // Used by Go layer to select appropriate GPU configuration before actual model loading.
+    struct llama_memory_measurement {
+        char   backend_name[128]; // Backend device name (e.g., "CUDA0", "CUDA1", "CPU")
+        size_t model_bytes;       // Model weights memory
+        size_t context_bytes;     // KV cache memory
+        size_t compute_bytes;     // Compute buffer memory (temp tensors during inference)
+        size_t total_bytes;       // Total memory requirement
+        bool   is_host;           // True if this is a host (CPU) backend
+    };
+
+    // Measure memory requirements without fully initializing context.
+    // This allows Go layer to make informed GPU selection decisions.
+    // Returns number of backends, fills measurements array (caller must allocate).
+    // If measurement fails, returns -1.
+    LLAMA_API int32_t llama_measure_memory_requirements(
+                     struct llama_model * model,
+            struct llama_context_params   params,
+          struct llama_memory_measurement * measurements,
+                              int32_t   max_measurements);
+
     //
     // training
     //

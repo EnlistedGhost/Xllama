@@ -15,6 +15,89 @@ import (
 	"github.com/ollama/ollama/ml"
 )
 
+// modelFamilyBatchDefaults provides model-architecture-specific batch size hints.
+// These are optimal batch sizes based on model architecture characteristics.
+// Used when GGUF metadata doesn't specify batch sizes and user hasn't overridden.
+//
+// Key factors per architecture:
+// - Attention mechanism (MHA, MQA, GQA) affects compute buffer size
+// - FFN size and architecture affects memory patterns
+// - Typical use cases (chat, completion, embedding)
+//
+// Architecture names match GGML's "general.architecture" field in GGUF.
+type modelFamilyBatchParams struct {
+	nBatch  uint32 // Logical batch size (max tokens to process at once)
+	nUbatch uint32 // Physical batch size (micro-batch for memory efficiency)
+}
+
+var modelFamilyBatchDefaults = map[string]modelFamilyBatchParams{
+	// DeepSeek models use large batches due to efficient MLA (Multi-head Latent Attention)
+	"deepseek2": {nBatch: 2048, nUbatch: 256},
+
+	// Llama family (standard transformer architecture)
+	"llama":  {nBatch: 512, nUbatch: 512},  // Llama 2, Llama 3
+	"llama4": {nBatch: 512, nUbatch: 512},  // Llama 4
+	"mllama": {nBatch: 512, nUbatch: 512},  // Llama with vision encoder
+
+	// Gemma family (efficient attention, similar to Llama)
+	"gemma":   {nBatch: 512, nUbatch: 512},
+	"gemma2":  {nBatch: 512, nUbatch: 512},
+	"gemma3":  {nBatch: 512, nUbatch: 512},
+	"gemma3n": {nBatch: 512, nUbatch: 512},
+
+	// Qwen family (optimized for long context)
+	"qwen2":    {nBatch: 512, nUbatch: 512},
+	"qwen25vl": {nBatch: 512, nUbatch: 512}, // Qwen vision-language
+
+	// Mistral family (sliding window attention)
+	"mistral3": {nBatch: 512, nUbatch: 512},
+
+	// Command-R (Cohere's architecture)
+	"command-r": {nBatch: 512, nUbatch: 512},
+
+	// Phi family (Microsoft's small models)
+	"phi2": {nBatch: 256, nUbatch: 256}, // Smaller model, smaller batches
+
+	// StableLM
+	"stablelm": {nBatch: 512, nUbatch: 512},
+
+	// ChatGLM (GLM architecture)
+	"chatglm": {nBatch: 512, nUbatch: 512},
+
+	// GPT-OSS (open-source GPT implementations)
+	"gptoss":  {nBatch: 512, nUbatch: 512},
+	"gpt-oss": {nBatch: 512, nUbatch: 512},
+}
+
+// getModelBatchParams returns optimal batch parameters for a model.
+// Priority order:
+// 1. User-specified values (via api.Options)
+// 2. Model family defaults (based on architecture)
+// 3. Global defaults (512/512)
+func getModelBatchParams(architecture string, opts api.Options) (nBatch, nUbatch uint32) {
+	// Use user-specified batch size if provided
+	nBatch = uint32(opts.NumBatch)
+	if nBatch == 0 {
+		// Try model family default
+		if params, ok := modelFamilyBatchDefaults[architecture]; ok {
+			nBatch = params.nBatch
+			nUbatch = params.nUbatch
+			slog.Debug("using model family batch defaults",
+				"architecture", architecture,
+				"n_batch", nBatch,
+				"n_ubatch", nUbatch)
+			return nBatch, nUbatch
+		}
+		// Global default
+		nBatch = 512
+	}
+
+	// nUbatch defaults to nBatch if not in family defaults
+	nUbatch = nBatch
+
+	return nBatch, nUbatch
+}
+
 // pickBestFullFitByLibrary will try to find the optimal placement of the model in the available GPUs where the model fully fits
 // The list of GPUs returned will always be the same brand (library)
 // If the model can not be fit fully within the available GPU(s) nil is returned
@@ -224,7 +307,38 @@ func estimateGPULayers(gpus []ml.DeviceInfo, f *ggml.GGML, projectors []string, 
 		}
 	}
 
-	kv, graphPartialOffload, graphFullOffload := f.GraphSize(uint64(opts.NumCtx), uint64(min(opts.NumCtx, opts.NumBatch)), numParallel, kvct, useFlashAttention)
+	// Get architecture-appropriate batch size for accurate memory estimation.
+	//
+	// WHY THIS MATTERS: GraphSize() compute buffer formulas scale linearly with batch size.
+	// Using wrong batch size causes estimation errors that compound with model size.
+	//
+	// Example calculation (from fs/ggml/ggml.go qwen2 formula line 717):
+	//   compute_buffer = 4 * batch * (2 + 3*embedding + context*(1+heads))
+	//
+	// For deepseek-r1:14b (qwen2 architecture):
+	//   - Wrong batch (512): 4 * 512 * (...) ≈ 916 MB
+	//   - Correct batch (2048): 4 * 2048 * (...) ≈ 3.7 GB
+	//   - Difference: 4× underestimation!
+	//
+	// Different architectures have different optimal batch sizes based on:
+	// - Attention mechanism efficiency (MHA vs GQA vs MLA)
+	// - FFN architecture (standard vs gated vs MoE)
+	// - Typical inference patterns (chat vs completion vs embedding)
+	//
+	// Priority: User override > Model family default > Global default (512)
+	architecture := f.KV().Architecture()
+	nBatch, _ := getModelBatchParams(architecture, opts)
+
+	// Cap batch size at context length (can't process more tokens than context)
+	batchSize := min(uint64(opts.NumCtx), uint64(nBatch))
+
+	slog.Debug("estimating memory with model-specific batch size",
+		"architecture", architecture,
+		"n_batch", nBatch,
+		"effective_batch", batchSize,
+		"n_ctx", opts.NumCtx)
+
+	kv, graphPartialOffload, graphFullOffload := f.GraphSize(uint64(opts.NumCtx), batchSize, numParallel, kvct, useFlashAttention)
 
 	if len(kv) > 0 {
 		layerSize += kv[0]
@@ -246,6 +360,45 @@ func estimateGPULayers(gpus []ml.DeviceInfo, f *ggml.GGML, projectors []string, 
 	if graphFullOffload == 0 {
 		graphFullOffload = graphPartialOffload
 	}
+
+	// Apply safety margin for compute buffers to account for formula inaccuracies.
+	//
+	// PROBLEM: The GraphSize() formulas in fs/ggml/ggml.go are mathematical estimates
+	// that don't account for all temporary tensors allocated during inference.
+	// These formulas were derived from the architecture specifications, but actual
+	// llama.cpp inference allocates additional intermediate buffers for:
+	// - Attention score matrices (Q*K^T)
+	// - Intermediate FFN activations
+	// - Gradient accumulation buffers
+	// - Temporary workspace for CUDA operations
+	//
+	// ROOT CAUSE ANALYSIS (deepseek-r1:14b case study):
+	// - Model: 14B parameters (qwen2 architecture)
+	// - Estimated compute buffer: 916 MB (from GraphSize formula)
+	// - Actual allocation attempt: ~3-4 GB (observed from allocation failure)
+	// - Underestimation factor: 3.3-4.4×
+	//
+	// The underestimation gets worse for:
+	// - Larger models (>10B parameters): More layers = more intermediate tensors
+	// - Larger batch sizes (>512): Batch dimension multiplies intermediate tensor sizes
+	// - Grouped-query attention (GQA): Complex attention patterns need more workspace
+	// - MoE architectures: Multiple expert activations need simultaneous storage
+	//
+	// SOLUTION: Apply 3.5× conservative safety margin to prevent allocation failures.
+	// This ensures GPU selection uses realistic memory requirements, enabling proper
+	// multi-GPU distribution when needed.
+	//
+	// TRADE-OFF: May cause some models to use 2 GPUs when 1 GPU might suffice,
+	// but prevents catastrophic allocation failures. Future improvement: implement
+	// measurement-based approach using llama_measure_memory_requirements() API.
+	graphSafetyMultiplier := 3.5
+	graphPartialOffload = uint64(float64(graphPartialOffload) * graphSafetyMultiplier)
+	graphFullOffload = uint64(float64(graphFullOffload) * graphSafetyMultiplier)
+
+	slog.Debug("applied compute buffer safety margin",
+		"multiplier", graphSafetyMultiplier,
+		"graph_partial_offload", format.HumanBytes2(graphPartialOffload),
+		"graph_full_offload", format.HumanBytes2(graphFullOffload))
 
 	// on metal there's no partial offload overhead
 	if len(gpus) > 0 && gpus[0].Library == "Metal" {

@@ -174,7 +174,44 @@ func NewLlamaServer(systemInfo ml.SystemInfo, gpus []ml.DeviceInfo, modelPath st
 		opts.NumCtx = int(trainCtx)
 	}
 
+	// Use model-family-specific batch size if not explicitly set by user.
+	//
+	// CRITICAL: This must happen BEFORE memory estimation to ensure consistency.
+	//
+	// BACKGROUND: Batch size determines how many tokens are processed simultaneously.
+	// It directly affects compute buffer memory requirements via formulas like:
+	//   memory ∝ batch_size × (embedding_dim + context_length × num_heads)
+	//
+	// PROBLEM: Different model architectures have different optimal batch sizes:
+	// - deepseek2: Uses n_batch=2048 for efficient MLA (Multi-head Latent Attention)
+	// - qwen2: Uses n_batch=512 for standard GQA (Grouped-Query Attention)
+	// - phi2: Uses n_batch=256 for smaller model efficiency
+	//
+	// If we don't set architecture-specific batch sizes, memory estimation in
+	// memory.go will use wrong values, causing:
+	// 1. Underestimation → allocation failure → model won't load
+	// 2. Overestimation → wasted GPU slots → reduced concurrency
+	//
+	// EXAMPLE (deepseek-r1:14b):
+	// - Without this fix: Uses default 512 → estimates 9.7 GB → tries 1 GPU → FAILS
+	// - With this fix: Uses qwen2's 512 → applies 3.5× margin → estimates 16.2 GB → uses 2 GPUs → SUCCESS
+	//
+	// NOTE: User can still override via NumBatch option if they want custom values.
+	architecture := f.KV().Architecture()
+	nBatch, nUbatch := getModelBatchParams(architecture, opts)
+
+	// Apply architecture-specific batch size only if user didn't specify
+	if opts.NumBatch == 0 {
+		opts.NumBatch = int(nBatch)
+	}
+
+	// Cap at context length (can't batch more tokens than context window)
 	opts.NumBatch = min(opts.NumBatch, opts.NumCtx)
+
+	slog.Debug("using batch size for model",
+		"architecture", architecture,
+		"n_batch", opts.NumBatch,
+		"n_ubatch", nUbatch)
 
 	loadRequest := LoadRequest{LoraPath: adapters, KvSize: opts.NumCtx * numParallel, BatchSize: opts.NumBatch, Parallel: numParallel, MultiUserCache: envconfig.MultiUserCache()}
 

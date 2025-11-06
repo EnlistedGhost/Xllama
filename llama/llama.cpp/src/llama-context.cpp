@@ -2921,6 +2921,133 @@ void llama_memory_breakdown_print(const struct llama_context * ctx) {
     }
 }
 
+// Measure memory requirements for GPU selection.
+//
+// PURPOSE: Enables accurate GPU selection by measuring actual memory allocation
+// requirements instead of relying on estimation formulas that often underestimate.
+//
+// BACKGROUND: The Go layer (llm/memory.go) estimates memory using GraphSize()
+// formulas that are mathematical approximations. These formulas don't account for
+// all temporary tensors allocated during inference, leading to underestimation.
+//
+// PROBLEM SOLVED: deepseek-r1:14b case study:
+// - GraphSize formula estimated: 916 MB compute buffers
+// - Actual allocation needed: ~3-4 GB compute buffers
+// - Underestimation: 3.3-4.4× error
+// Result: Model tried to fit in 1 GPU (11GB), failed allocation, crashed.
+//
+// HOW THIS WORKS:
+// 1. Creates temporary context with given parameters (n_ctx, n_batch, etc.)
+// 2. Calls graph_reserve() which builds computation graph and allocates buffers
+// 3. Queries actual buffer sizes via memory_breakdown()
+// 4. Returns per-backend breakdown: model weights, KV cache, compute buffers
+// 5. Cleans up temporary context
+//
+// USAGE: Called from Go layer before committing to GPU configuration.
+// Allows intelligent multi-GPU selection based on actual requirements.
+//
+// CURRENT STATUS: API implemented but not yet integrated into GPU selection flow.
+// Current solution uses 3.5× safety margin on estimates (see llm/memory.go:377).
+// Future improvement: Replace safety margin with this measurement-based approach.
+//
+// Returns: Number of backends measured, or -1 on failure.
+int32_t llama_measure_memory_requirements(
+        struct llama_model * model,
+        struct llama_context_params params,
+        struct llama_memory_measurement * measurements,
+        int32_t max_measurements) {
+
+    if (!model || !measurements || max_measurements <= 0) {
+        LLAMA_LOG_ERROR("%s: invalid parameters\n", __func__);
+        return -1;
+    }
+
+    try {
+        // Create a temporary context with the given parameters to measure memory requirements
+        llama_context * ctx = new llama_context(*model, params);
+
+        if (!ctx) {
+            LLAMA_LOG_ERROR("%s: failed to create temporary context for measurement\n", __func__);
+            return -1;
+        }
+
+        // Get memory breakdown from the context
+        std::map<ggml_backend_buffer_type_t, llama_memory_breakdown_data> memory_breakdown = ctx->memory_breakdown();
+        const std::vector<ggml_backend_dev_t> & devices = model->devices;
+
+        int32_t num_measurements = 0;
+
+        // Process each device backend
+        for (size_t i = 0; i < devices.size() && num_measurements < max_measurements; i++) {
+            ggml_backend_dev_t dev = devices[i];
+            ggml_backend_buffer_type_t buft = ggml_backend_dev_buffer_type(dev);
+
+            // Find matching memory breakdown for this buffer type
+            auto it = memory_breakdown.find(buft);
+            if (it != memory_breakdown.end()) {
+                const llama_memory_breakdown_data & mb = it->second;
+
+                // Fill measurement struct
+                strncpy(measurements[num_measurements].backend_name,
+                        ggml_backend_dev_name(dev),
+                        sizeof(measurements[num_measurements].backend_name) - 1);
+                measurements[num_measurements].backend_name[sizeof(measurements[num_measurements].backend_name) - 1] = '\0';
+
+                measurements[num_measurements].model_bytes = mb.model;
+                measurements[num_measurements].context_bytes = mb.context;
+                measurements[num_measurements].compute_bytes = mb.compute;
+                measurements[num_measurements].total_bytes = mb.model + mb.context + mb.compute;
+                measurements[num_measurements].is_host = ggml_backend_buft_is_host(buft);
+
+                num_measurements++;
+            }
+        }
+
+        // Add host/CPU memory if present and there's room
+        if (num_measurements < max_measurements) {
+            llama_memory_breakdown_data mb_host = {0, 0, 0};
+            bool has_host = false;
+
+            for (const auto & buft_mb : memory_breakdown) {
+                ggml_backend_buffer_type_t buft = buft_mb.first;
+                if (ggml_backend_buft_is_host(buft)) {
+                    mb_host.model += buft_mb.second.model;
+                    mb_host.context += buft_mb.second.context;
+                    mb_host.compute += buft_mb.second.compute;
+                    has_host = true;
+                }
+            }
+
+            if (has_host) {
+                strncpy(measurements[num_measurements].backend_name, "CPU",
+                        sizeof(measurements[num_measurements].backend_name) - 1);
+                measurements[num_measurements].backend_name[sizeof(measurements[num_measurements].backend_name) - 1] = '\0';
+
+                measurements[num_measurements].model_bytes = mb_host.model;
+                measurements[num_measurements].context_bytes = mb_host.context;
+                measurements[num_measurements].compute_bytes = mb_host.compute;
+                measurements[num_measurements].total_bytes = mb_host.model + mb_host.context + mb_host.compute;
+                measurements[num_measurements].is_host = true;
+
+                num_measurements++;
+            }
+        }
+
+        // Clean up temporary context
+        delete ctx;
+
+        LLAMA_LOG_INFO("%s: measured %d backends\n", __func__, num_measurements);
+        return num_measurements;
+
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("%s: exception during measurement: %s\n", __func__, e.what());
+        return -1;
+    } catch (...) {
+        LLAMA_LOG_ERROR("%s: unknown exception during measurement\n", __func__);
+        return -1;
+    }
+}
+
 //
 // training
 //

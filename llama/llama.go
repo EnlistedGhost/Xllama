@@ -586,6 +586,81 @@ func (m *Model) NEmbd() int {
 	return int(C.llama_model_n_embd(m.c))
 }
 
+// MemoryMeasurement holds actual measured memory requirements per backend device.
+//
+// MOTIVATION: The GraphSize() estimation formulas in fs/ggml/ggml.go often
+// underestimate compute buffer requirements by 3-4×, causing allocation failures
+// and wasted GPU capacity. This struct enables measurement-based GPU selection.
+//
+// ARCHITECTURE: Returned by MeasureMemoryRequirements() which creates a temporary
+// llama.cpp context, allocates compute buffers, and queries actual sizes.
+//
+// CURRENT STATUS: API implemented but not yet integrated into GPU selection.
+// Current solution uses 3.5× safety margin on estimates (llm/memory.go:377).
+// This provides the foundation for future measurement-based approach.
+type MemoryMeasurement struct {
+	BackendName  string // Backend device name (e.g., "CUDA0", "CUDA1", "CPU")
+	ModelBytes   uint64 // Model weights memory in bytes
+	ContextBytes uint64 // KV cache memory in bytes
+	ComputeBytes uint64 // Compute buffer memory (temp tensors) in bytes
+	TotalBytes   uint64 // Total memory requirement in bytes
+	IsHost       bool   // True if this is a host (CPU) backend
+}
+
+// MeasureMemoryRequirements measures actual memory requirements for this model
+// with given context parameters. This allows the Go layer to make informed GPU
+// selection decisions before committing to a configuration.
+//
+// This function creates a temporary context, reserves compute buffers, and queries
+// actual memory requirements per backend. It handles allocation failures gracefully
+// by retrieving attempted sizes even when allocation fails.
+//
+// Parameters:
+//   - params: Context parameters (n_ctx, n_batch, n_ubatch, n_seq_max)
+//
+// Returns:
+//   - []MemoryMeasurement: Per-backend memory breakdown
+//   - error: Non-nil if measurement fails
+//
+// Example usage:
+//
+//	measurements, err := model.MeasureMemoryRequirements(params)
+//	if err != nil {
+//	    // Fallback to estimation
+//	}
+//	for _, m := range measurements {
+//	    fmt.Printf("%s: %d MB total\n", m.BackendName, m.TotalBytes/1024/1024)
+//	}
+func (m *Model) MeasureMemoryRequirements(params ContextParams) ([]MemoryMeasurement, error) {
+	const maxBackends = 16 // llama_max_devices() returns 16
+	cMeasurements := make([]C.struct_llama_memory_measurement, maxBackends)
+
+	numBackends := C.llama_measure_memory_requirements(
+		m.c,
+		params.c,
+		&cMeasurements[0],
+		C.int32_t(maxBackends),
+	)
+
+	if numBackends < 0 {
+		return nil, fmt.Errorf("failed to measure memory requirements")
+	}
+
+	measurements := make([]MemoryMeasurement, numBackends)
+	for i := range numBackends {
+		measurements[i] = MemoryMeasurement{
+			BackendName:  C.GoString(&cMeasurements[i].backend_name[0]),
+			ModelBytes:   uint64(cMeasurements[i].model_bytes),
+			ContextBytes: uint64(cMeasurements[i].context_bytes),
+			ComputeBytes: uint64(cMeasurements[i].compute_bytes),
+			TotalBytes:   uint64(cMeasurements[i].total_bytes),
+			IsHost:       bool(cMeasurements[i].is_host),
+		}
+	}
+
+	return measurements, nil
+}
+
 // vision processing
 type MtmdContext struct {
 	c *C.struct_mtmd_context
