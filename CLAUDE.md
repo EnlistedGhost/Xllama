@@ -74,11 +74,12 @@ This document tracks development goals and notes for this Ollama repository fork
 rm -rf build
 go clean -cache
 
-# Configure the build (specify GCC 10.5 explicitly)
+# Configure the build (For all 11.4 or k80)
 CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CUDA 11"
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CUDA 11 K80"
 
 # Build the C/C++/CUDA libraries
-CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j 48
+CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
 
 # Build the Go binary
 go build -o ollama .
