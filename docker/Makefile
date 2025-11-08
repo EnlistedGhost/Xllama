@@ -122,19 +122,19 @@ copy-source: start-builder
 run-cmake: copy-source
 	@echo "→ Running CMake configuration (preset: $(CMAKE_PRESET))..."
 	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		scl enable gcc-toolset-10 -- bash -c 'cmake --preset "$(CMAKE_PRESET)"'
+		bash -l -c 'CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "$(CMAKE_PRESET)"'
 
 # Run CMake build (C/C++/CUDA compilation)
 run-build: run-cmake
 	@echo "→ Building C/C++/CUDA libraries (using $(NPROC) cores)..."
 	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		scl enable gcc-toolset-10 -- bash -c 'cmake --build build -j$(NPROC)'
+		bash -l -c 'CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(NPROC)'
 
 # Run Go build
 run-go-build: run-build
 	@echo "→ Building Go binary..."
 	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		scl enable gcc-toolset-10 -- bash -c 'go build -o ollama .'
+		bash -l -c 'go build -o ollama .'
 
 # Copy build artifacts from container to host
 copy-artifacts: run-go-build
@@ -153,8 +153,7 @@ copy-artifacts: run-go-build
 # Open an interactive shell in the builder container
 shell: start-builder
 	@echo "→ Opening shell in builder container..."
-	@docker exec -it -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		scl enable gcc-toolset-10 -- bash
+	@docker exec -it -w /usr/local/src/ollama37 $(CONTAINER_NAME) bash -l
 
 # Test the built binary
 test: build
