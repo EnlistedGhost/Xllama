@@ -80,21 +80,15 @@ ensure-builder:
 # Start the builder container with GPU access
 start-builder:
 	@echo "→ Starting builder container with GPU access..."
-	@if docker ps -a --format '{{.Names}}' | grep -q "^$(CONTAINER_NAME)$$"; then \
-		echo "  Container $(CONTAINER_NAME) already exists, checking status..."; \
-		if docker ps --format '{{.Names}}' | grep -q "^$(CONTAINER_NAME)$$"; then \
-			echo "  Container is already running"; \
-		else \
-			echo "  Starting existing container..."; \
-			docker start $(CONTAINER_NAME); \
-		fi \
+	@if docker ps --format '{{.Names}}' | grep -q "^$(CONTAINER_NAME)$$"; then \
+		echo "  Container $(CONTAINER_NAME) is already running"; \
 	else \
-		echo "  Creating new container..."; \
+		echo "  Creating new builder container..."; \
 		docker run --rm -d \
 			--name $(CONTAINER_NAME) \
 			--runtime=nvidia \
 			--gpus all \
-			$(BUILDER_IMAGE) \
+			$(BUILDER_IMAGE):$(BUILDER_TAG) \
 			sleep infinity; \
 		sleep 2; \
 		docker exec $(CONTAINER_NAME) nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader; \
@@ -105,7 +99,7 @@ stop-builder:
 	@echo "→ Stopping builder container..."
 	@if docker ps --format '{{.Names}}' | grep -q "^$(CONTAINER_NAME)$$"; then \
 		docker stop $(CONTAINER_NAME); \
-		echo "  Container stopped"; \
+		echo "  Container stopped and removed (--rm flag)"; \
 	else \
 		echo "  Container not running"; \
 	fi
@@ -122,19 +116,19 @@ copy-source: start-builder
 run-cmake: copy-source
 	@echo "→ Running CMake configuration (preset: $(CMAKE_PRESET))..."
 	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		bash -l -c 'CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "$(CMAKE_PRESET)"'
+		bash -l -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$$LD_LIBRARY_PATH CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "$(CMAKE_PRESET)"'
 
 # Run CMake build (C/C++/CUDA compilation)
 run-build: run-cmake
 	@echo "→ Building C/C++/CUDA libraries (using $(NPROC) cores)..."
 	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		bash -l -c 'CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(NPROC)'
+		bash -l -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$$LD_LIBRARY_PATH CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(NPROC)'
 
 # Run Go build
 run-go-build: run-build
 	@echo "→ Building Go binary..."
 	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		bash -l -c 'go build -o ollama .'
+		bash -l -c 'go build -buildvcs=false -o ollama .'
 
 # Copy build artifacts from container to host
 copy-artifacts: run-go-build
@@ -142,6 +136,10 @@ copy-artifacts: run-go-build
 	@mkdir -p $(OUTPUT_DIR)/lib
 	@docker cp $(CONTAINER_NAME):/usr/local/src/ollama37/ollama $(OUTPUT_DIR)/
 	@docker cp $(CONTAINER_NAME):/usr/local/src/ollama37/build/lib/ollama/. $(OUTPUT_DIR)/lib/
+	@echo "→ Copying GCC 10 runtime libraries..."
+	@docker cp $(CONTAINER_NAME):/usr/local/lib64/libstdc++.so.6 $(OUTPUT_DIR)/lib/
+	@docker cp $(CONTAINER_NAME):/usr/local/lib64/libstdc++.so.6.0.28 $(OUTPUT_DIR)/lib/
+	@docker cp $(CONTAINER_NAME):/usr/local/lib64/libgcc_s.so.1 $(OUTPUT_DIR)/lib/
 	@echo "  Artifacts copied to $(OUTPUT_DIR)"
 	@echo ""
 	@echo "  Binary: $(OUTPUT_DIR)/ollama"
@@ -197,13 +195,14 @@ build-runtime:
 	@echo "✓ Runtime image built successfully!"
 	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
 	@echo ""
-	@$(MAKE) stop-builder
-	@echo ""
 	@echo "To run the image:"
 	@echo "  make run-runtime"
 	@echo ""
 	@echo "Or manually:"
 	@echo "  docker run --rm -it --runtime=nvidia --gpus all -p 11434:11434 $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
+	@echo ""
+	@echo "To stop the builder container:"
+	@echo "  make stop-builder"
 
 # Run the runtime container
 run-runtime:

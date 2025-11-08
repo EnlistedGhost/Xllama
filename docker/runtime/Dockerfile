@@ -1,24 +1,11 @@
-# Dockerfile for Ollama37 Runtime Image
-#
-# This creates a minimal runtime-only image from pre-built artifacts.
-# The artifacts should be built first using the Makefile in ../
-#
-# Build context should be the project root (../..) so we can access docker/output/
-#
-# Usage:
-#   cd /path/to/ollama37
-#   make -C docker build           # Build the binary first
-#   make -C docker build-runtime   # Create the runtime image
+FROM rockylinux/rockylinux:8
 
-FROM nvidia/cuda:11.4.3-runtime-rockylinux8
-
-# Install minimal runtime dependencies
-# Note: Not running 'dnf update' to keep base image stable and build faster
-RUN dnf -y install \
-    libgomp \
-    libstdc++ \
-    && dnf clean all \
-    && rm -rf /var/cache/dnf
+# Install only CUDA runtime libraries (not the full toolkit)
+# The host system provides the NVIDIA driver at runtime via --gpus flag
+RUN dnf -y install dnf-plugins-core\
+    && dnf -y config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo\
+    && dnf -y install cuda-cudart-11-4 libcublas-11-4 \
+    && dnf clean all
 
 # Create directory structure
 RUN mkdir -p /usr/local/bin /usr/local/lib/ollama
@@ -26,12 +13,15 @@ RUN mkdir -p /usr/local/bin /usr/local/lib/ollama
 # Copy the ollama binary from build output
 COPY docker/output/ollama /usr/local/bin/ollama
 
-# Copy all shared libraries from build output
+# Copy all shared libraries from build output (includes ollama libs + GCC 10 runtime libs)
 COPY docker/output/lib/ /usr/local/lib/ollama/
 
-# Prepend our library path to the existing LD_LIBRARY_PATH
-# Base image already has: /usr/local/nvidia/lib:/usr/local/nvidia/lib64
-ENV LD_LIBRARY_PATH="/usr/local/lib/ollama:${LD_LIBRARY_PATH}"
+# Set library path to include our ollama libraries first
+# This includes:
+#   - Ollama CUDA/GGML libraries
+#   - GCC 10 runtime libraries (libstdc++.so.6, libgcc_s.so.1)
+#   - System CUDA libraries
+ENV LD_LIBRARY_PATH=/usr/local/lib/ollama:/usr/local/cuda-11.4/lib64:/usr/lib64
 
 # Base image already sets these, but we can override if needed:
 # NVIDIA_DRIVER_CAPABILITIES=compute,utility

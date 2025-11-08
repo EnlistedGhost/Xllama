@@ -1,12 +1,13 @@
 FROM rockylinux/rockylinux:8
 
-# Update OS and install cuda toolkit 11.4 and nvdia driver 470
-#RUN dnf -y update\
-#    && dnf -y module install nvidia-driver:470-dkms\
+# Install CUDA toolkit 11.4
+# Note: NVIDIA driver is NOT needed in builder container - only CUDA toolkit for compilation
+# The host system provides the driver at runtime via --gpus flag
+# dnf-plugins-core is required for the config-manager command
 
-RUN dnf -y install epel-release\
+RUN dnf -y install dnf-plugins-core\
     && dnf -y config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo\
-    && dnf -y install cuda-11-4
+    && dnf -y install cuda-toolkit-11-4
 
 # Post install, setup path
 COPY cuda-11.4.sh /etc/profile.d/cuda-11.4.sh
