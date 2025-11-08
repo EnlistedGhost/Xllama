@@ -114,7 +114,9 @@ stop-builder:
 copy-source: start-builder
 	@echo "→ Copying source code to container..."
 	@docker cp $(SOURCE_DIR)/. $(CONTAINER_NAME):/usr/local/src/ollama37/
-	@echo "  Source code copied"
+	@echo "→ Cleaning any host build artifacts from container..."
+	@docker exec $(CONTAINER_NAME) rm -rf /usr/local/src/ollama37/build /usr/local/src/ollama37/ollama /usr/local/src/ollama37/dist
+	@echo "  Source code copied (clean build environment)"
 
 # Run CMake configuration
 run-cmake: copy-source
