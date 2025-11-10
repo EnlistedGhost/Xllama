@@ -2,10 +2,9 @@ version: "3.8"
 
 services:
   ollama:
-    image: ollama37-runtime:latest
-    container_name: ollama37-runtime
+    image: ollama37:latest
+    container_name: ollama37
     runtime: nvidia
-    user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
         reservations:
@@ -16,9 +15,8 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ${HOME}/.ollama:${HOME}/.ollama
+      - ollama-data:/root/.ollama
     environment:
-      - HOME=${HOME}
       - OLLAMA_HOST=0.0.0.0:11434
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -29,6 +27,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
+
 volumes:
   ollama-data:
     name: ollama-data

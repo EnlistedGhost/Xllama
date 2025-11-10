@@ -1,17 +1,17 @@
 # Ollama37 Docker Build System
 
-**Makefile-based build system for Ollama with CUDA 11.4 and Compute Capability 3.7 support (Tesla K80)**
+**Single-stage Docker build for Ollama with CUDA 11.4 and Compute Capability 3.7 support (Tesla K80)**
 
 ## Overview
 
-This fork maintains support for legacy NVIDIA GPUs (Tesla K80, Compute Capability 3.7) using CUDA 11.4 and GCC 10. The upstream Ollama project dropped CC 3.7 support when transitioning to CUDA 12.
+This Docker build system creates a single all-in-one image that includes:
+- CUDA 11.4 toolkit (required for Tesla K80, compute capability 3.7)
+- GCC 10 (built from source, required by CUDA 11.4)
+- CMake 4.0 (built from source)
+- Go 1.25.3
+- Ollama37 binary with K80 GPU support
 
-### Key Features
-
-- GPU-enabled build container with automatic architecture detection
-- Makefile orchestration for entire workflow
-- Production-ready runtime image (3.1GB)
-- Docker Compose support
+The image is built entirely from source by cloning from https://github.com/dogkeeper886/ollama37
 
 ## Prerequisites
 
@@ -24,105 +24,41 @@ This fork maintains support for legacy NVIDIA GPUs (Tesla K80, Compute Capabilit
 
 ## Quick Start
 
-### 1. Build the Builder Image (First Time Only)
+### 1. Build the Image
 
 ```bash
 cd /home/jack/Documents/ollama37/docker
-make build-builder
+docker build -t ollama37:latest -f Dockerfile ..
 ```
 
-This builds the `ollama37-builder:latest` image containing CUDA 11.4, GCC 10, CMake, and Go. Takes ~5 minutes first time.
+**Build time:** ~90 minutes (first time, includes building GCC 10 and CMake 4 from source)
 
-### 2. Build Ollama
+**Image size:** ~20GB (includes full build toolchain + CUDA toolkit + Ollama)
+
+### 2. Run with Docker Compose (Recommended)
 
 ```bash
-# Build binary and libraries (~7 minutes)
-make build
-
-# Create runtime Docker image (~2 minutes)
-make build-runtime
-```
-
-### 3. Run
-
-```bash
-# Option A: Using docker-compose (recommended)
-docker-compose up -d
-curl http://localhost:11434/api/tags
-
-# Option B: Using Makefile
-make run-runtime
-curl http://localhost:11434/api/tags
-```
-
-## Directory Structure
-
-```
-docker/
-├── Makefile              # Build orchestration
-├── docker-compose.yml    # Deployment configuration
-├── builder/
-│   └── Dockerfile        # Builder image definition
-├── runtime/
-│   └── Dockerfile        # Runtime image definition
-└── output/               # Build artifacts (created by make build)
-    ├── ollama           # Binary (61MB)
-    └── lib/             # Libraries (109MB)
-```
-
-## Make Targets
-
-### Builder Image
-| Command | Description |
-|---------|-------------|
-| `make build-builder` | Build builder Docker image |
-| `make clean-builder` | Remove builder image |
-
-### Build
-| Command | Description |
-|---------|-------------|
-| `make build` | Build binary and libraries |
-| `make test` | Test the built binary |
-| `make shell` | Open shell in builder container |
-| `make clean` | Remove output artifacts |
-| `make clean-all` | Clean everything + stop containers |
-
-### Runtime
-| Command | Description |
-|---------|-------------|
-| `make build-runtime` | Build Docker runtime image |
-| `make run-runtime` | Start runtime container |
-| `make stop-runtime` | Stop runtime container |
-| `make clean-runtime` | Remove image and volumes |
-
-### Help
-```bash
-make help               # Show all available targets
-```
-
-## Usage Examples
-
-### Development Workflow
-
-```bash
-# First time setup
-make build-builder
-make build
-make test
-
-# After code changes
-make build
-make build-runtime
-make run-runtime
-```
-
-### Production Deployment
-
-```bash
-make build-builder
-make build build-runtime
 docker-compose up -d
 ```
+
+Check logs:
+```bash
+docker-compose logs -f
+```
+
+### 3. Run Manually
+
+```bash
+docker run -d \
+  --name ollama37 \
+  --runtime=nvidia \
+  --gpus all \
+  -p 11434:11434 \
+  -v ollama-data:/root/.ollama \
+  ollama37:latest
+```
+
+## Usage
 
 ### Using the API
 
@@ -144,11 +80,73 @@ curl http://localhost:11434/api/generate -d '{
 ### Using the CLI
 
 ```bash
-# List/pull/run models
-docker exec ollama37-runtime ollama list
-docker exec ollama37-runtime ollama pull gemma3:4b
-docker exec ollama37-runtime ollama run gemma3:4b "Hello!"
+# List models
+docker exec ollama37 ollama list
+
+# Pull a model
+docker exec ollama37 ollama pull gemma3:4b
+
+# Run a model
+docker exec ollama37 ollama run gemma3:4b "Hello!"
 ```
+
+## Architecture
+
+### Single-Stage Build Process
+
+The Dockerfile performs these steps in order:
+
+1. **Base Setup** (10 min)
+   - Rocky Linux 8
+   - CUDA 11.4 toolkit installation
+   - Development tools
+
+2. **Build Toolchain** (70 min)
+   - GCC 10 from source (~60 min)
+   - CMake 4 from source (~8 min)
+   - Go 1.25.3 binary (~1 min)
+
+3. **Ollama Compilation** (10 min)
+   - Git clone from dogkeeper886/ollama37
+   - CMake configure with "CUDA 11" preset
+   - Build C/C++/CUDA libraries
+   - Build Go binary
+
+4. **Runtime Setup**
+   - Configure library paths
+   - Set environment variables
+   - Configure entrypoint
+
+### Why Single-Stage?
+
+The previous two-stage design (builder → runtime) had issues:
+- Complex artifact copying between stages
+- Missing CUDA runtime libraries
+- LD_LIBRARY_PATH mismatches
+- User/permission problems
+
+Single-stage ensures:
+- ✅ All libraries present and properly linked
+- ✅ Consistent environment from build to runtime
+- ✅ No artifact copying issues
+- ✅ Complete CUDA toolkit available at runtime
+
+**Trade-off:** Larger image size (~20GB vs ~3GB) for guaranteed reliability
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_HOST` | `0.0.0.0:11434` | Server listen address |
+| `LD_LIBRARY_PATH` | `/usr/local/src/ollama37/build/lib/ollama:/usr/local/lib64:/usr/local/cuda-11.4/lib64:/usr/lib64` | Library search path |
+| `NVIDIA_VISIBLE_DEVICES` | `all` | Which GPUs to use |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility` | GPU capabilities |
+
+### Volume Mounts
+
+- `/root/.ollama` - Model storage (use Docker volume `ollama-data`)
 
 ## GPU Support
 
@@ -161,7 +159,7 @@ docker exec ollama37-runtime ollama run gemma3:4b "Hello!"
 **VRAM:** 12GB per GPU (24GB for dual-GPU K80)
 
 **Model sizes:**
-- Small (3-4B): Full precision
+- Small (1-4B): Full precision
 - Medium (7-8B): Q4_K_M quantization
 - Large (13B+): Q4_0 quantization or multi-GPU
 
@@ -171,47 +169,34 @@ docker run --gpus all ...              # Use all GPUs
 docker run --gpus '"device=0"' ...     # Use specific GPU
 ```
 
-## Configuration
-
-### Environment Variables (docker-compose.yml)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OLLAMA_HOST` | `0.0.0.0:11434` | Server listen address |
-| `OLLAMA_MODELS` | `/root/.ollama/models` | Model storage path |
-| `NVIDIA_VISIBLE_DEVICES` | `all` | Which GPUs to use |
-
-### Makefile Variables
-
-```bash
-make build CMAKE_PRESET="CUDA 11 K80"         # Use different preset
-make build NPROC=4                            # Control parallel jobs
-make build-runtime RUNTIME_IMAGE=my-ollama    # Custom image name
-```
-
 ## Troubleshooting
 
-### GPU not detected during build
+### GPU not detected
 ```bash
-make shell
-nvidia-smi    # Should show your GPU
+# Check GPU visibility in container
+docker exec ollama37 nvidia-smi
+
+# Check CUDA libraries
+docker exec ollama37 ldconfig -p | grep cuda
+```
+
+### Model fails to load
+```bash
+# Check logs with CUDA debug
+docker run --rm --runtime=nvidia --gpus all \
+  -e OLLAMA_DEBUG=1 \
+  -e GGML_CUDA_DEBUG=1 \
+  ollama37:latest serve
+
+# Check library paths
+docker exec ollama37 bash -c 'echo $LD_LIBRARY_PATH'
 ```
 
 ### Out of memory during build
 ```bash
-make build NPROC=2    # Reduce parallel jobs
-```
-
-### Container won't start
-```bash
-docker logs ollama37-runtime
-# or
-docker-compose logs
-```
-
-### GPU not accessible in runtime
-```bash
-docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+# Reduce parallel jobs in Dockerfile
+# Edit line: cmake --build build -j$(nproc)
+# Change to: cmake --build build -j2
 ```
 
 ### Port already in use
@@ -221,36 +206,27 @@ ports:
   - "11435:11434"  # Change host port
 ```
 
-## Advanced
+## Rebuilding
 
-### Custom Builder Image
-
-The builder is automatically built from `builder/Dockerfile` when running `make build` for the first time.
-
-To customize (e.g., change CUDA version, add dependencies):
-
+### Rebuild from scratch
 ```bash
-vim docker/builder/Dockerfile
-make clean-builder build-builder
-make build
+docker-compose down
+docker rmi ollama37:latest
+docker build --no-cache -t ollama37:latest -f Dockerfile ..
+docker-compose up -d
 ```
 
-See `builder/README.md` for details.
-
-### Clean Docker Build Cache
-
+### Rebuild with updated code
 ```bash
-# Remove all build cache
-docker builder prune -af
-
-# Nuclear option (cleans everything)
-docker system prune -af
+# The git clone will pull latest from GitHub
+docker build -t ollama37:latest -f Dockerfile ..
+docker-compose restart
 ```
 
 ## Documentation
 
 - **[../CLAUDE.md](../CLAUDE.md)** - Project goals and implementation notes
-- **[builder/README.md](builder/README.md)** - Builder image documentation
+- **[Upstream Ollama](https://github.com/ollama/ollama)** - Original Ollama project
 
 ## License
 
