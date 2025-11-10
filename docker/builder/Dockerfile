@@ -1,3 +1,7 @@
+# Ollama37 Builder Image
+# This image provides the complete build environment for compiling Ollama with Tesla K80 (compute 3.7) support
+# Includes: CUDA 11.4, GCC 10, CMake 4, Go 1.25.3
+
 FROM rockylinux/rockylinux:8
 
 # Install CUDA toolkit 11.4
@@ -9,13 +13,14 @@ RUN dnf -y install dnf-plugins-core\
     && dnf -y config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo\
     && dnf -y install cuda-toolkit-11-4
 
-# Post install, setup path
-COPY cuda-11.4.sh /etc/profile.d/cuda-11.4.sh
+# Setup CUDA path
+RUN echo 'export PATH="${PATH}:/usr/local/cuda-11.4/bin"' > /etc/profile.d/cuda-11.4.sh
 ENV PATH="$PATH:/usr/local/cuda-11.4/bin"
-#ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib64:/usr/local/lib64"
 
-# Install gcc 10
-RUN dnf -y install wget unzip bzip2\
+# Install GCC 10 from source
+# CUDA 11.4 requires GCC 10 maximum (enforced in host_config.h)
+# GCC 11+ is incompatible with CUDA 11.4
+RUN dnf -y install wget unzip bzip2 git\
     && dnf -y groupinstall "Development Tools"\
     && cd /usr/local/src\
     && wget https://github.com/gcc-mirror/gcc/archive/refs/heads/releases/gcc-10.zip\
@@ -28,17 +33,16 @@ RUN dnf -y install wget unzip bzip2\
     && make -j $(nproc)\
     && make install
 
-# Post install, setup path
-#COPY gcc-10.sh /etc/profile.d/gcc-10.sh
-#ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib64:/usr/local/lib64"
-COPY gcc-10.conf /etc/ld.so.conf.d/gcc-10.conf
-RUN ldconfig\
+# Setup GCC 10 library path and update system compiler
+# Configure ldconfig to find GCC 10 runtime libraries
+# Replace default cc symlink to use our custom GCC 10
+RUN echo '/usr/local/lib64' > /etc/ld.so.conf.d/gcc-10.conf\
+    && ldconfig\
     && rm -f /usr/bin/cc\
     && ln -s /usr/local/bin/gcc /usr/bin/cc
 
-# Install cmake
-#ENV LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
-#ENV PATH="/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Install CMake 4 from source
+# Required for modern CMake features and CUDA architecture configuration
 RUN dnf -y install openssl-devel\
     && cd /usr/local/src\
     && wget https://github.com/Kitware/CMake/releases/download/v4.0.0/cmake-4.0.0.tar.gz\
@@ -49,11 +53,11 @@ RUN dnf -y install openssl-devel\
     && make -j $(nproc)\
     && make install
 
-# Install go
+# Install go 1.25.3
 RUN cd /usr/local\
     && wget https://go.dev/dl/go1.25.3.linux-amd64.tar.gz\
     && tar xvf go1.25.3.linux-amd64.tar.gz
 
-# Post install, setup path
-COPY go.sh /etc/profile.d/go.sh
+# Setup Go path
+RUN echo 'export PATH="${PATH}:/usr/local/go/bin"' > /etc/profile.d/go.sh
 ENV PATH="$PATH:/usr/local/go/bin"

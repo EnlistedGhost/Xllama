@@ -1,288 +1,144 @@
-# Makefile for building Ollama with GPU-enabled builder container
+# Makefile for Ollama37 Docker Build System
 #
-# This Makefile uses a pre-built builder container with CUDA support and GPU access
-# to compile Ollama with compute capability 3.7 support (Tesla K80).
+# This Makefile manages the two-stage Docker build process:
+#   1. Builder image: Base environment with CUDA 11.4, GCC 10, CMake 4, Go 1.25.3
+#   2. Runtime image: Two-stage build that compiles and packages Ollama
+#
+# The runtime Dockerfile handles:
+#   - Cloning source from GitHub
+#   - CMake configuration and C/C++/CUDA compilation
+#   - Go binary compilation
+#   - Packaging runtime environment
 #
 # Usage:
-#   make build          - Build ollama binary and libraries
-#   make clean          - Remove build artifacts from host
-#   make clean-all      - Remove build artifacts and stop/remove containers
-#   make shell          - Open a shell in the builder container
-#   make test           - Test the built binary
+#   make build          - Build builder and runtime images (default)
+#   make build-builder  - Build only the builder image
+#   make build-runtime  - Build only the runtime image
+#   make clean          - Remove all Docker images
+#   make help           - Show help message
+#
+# To run the container, use docker-compose:
+#   docker-compose up -d
+#   docker-compose logs -f
+#   docker-compose down
 
 # Configuration
 BUILDER_IMAGE := ollama37-builder
 BUILDER_TAG := latest
-BUILDER_DOCKERFILE := $(SOURCE_DIR)/docker/builder/Dockerfile
-CONTAINER_NAME := ollama37-builder
-RUNTIME_IMAGE := ollama37-runtime
+RUNTIME_IMAGE := ollama37
 RUNTIME_TAG := latest
 SOURCE_DIR := $(shell cd .. && pwd)
-BUILD_DIR := $(SOURCE_DIR)/build
-DIST_DIR := $(SOURCE_DIR)/dist
-OUTPUT_DIR := $(SOURCE_DIR)/docker/output
+BUILDER_DOCKERFILE := $(SOURCE_DIR)/docker/builder/Dockerfile
 RUNTIME_DOCKERFILE := $(SOURCE_DIR)/docker/runtime/Dockerfile
 
-# CMake preset to use
-CMAKE_PRESET := CUDA 11
+# Docker build context directories
+BUILDER_CONTEXT := $(SOURCE_DIR)/docker/builder
+RUNTIME_CONTEXT := $(SOURCE_DIR)
 
-# Detect number of CPU cores for parallel compilation
-NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-
-.PHONY: all build clean clean-all shell test build-builder clean-builder ensure-builder start-builder stop-builder copy-source run-cmake run-build run-go-build copy-artifacts build-runtime run-runtime stop-runtime clean-runtime
+.PHONY: all build build-builder build-runtime ensure-builder clean help
 
 # Default target
 all: build
 
-# ===== Builder Image Targets =====
+# Build both builder and runtime images
+build: build-builder build-runtime
+	@echo ""
+	@echo "✓ All images built successfully!"
+	@echo "  Builder: $(BUILDER_IMAGE):$(BUILDER_TAG)"
+	@echo "  Runtime: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
+	@echo ""
+	@echo "To start the Ollama server:"
+	@echo "  docker-compose up -d"
+	@echo ""
+	@echo "View logs:"
+	@echo "  docker-compose logs -f"
+	@echo ""
+	@echo "Stop the server:"
+	@echo "  docker-compose down"
 
-# Build the builder Docker image from builder/Dockerfile
+# Build the builder base image
 build-builder:
-	@echo "→ Building builder Docker image..."
-	@echo "  Building Docker image $(BUILDER_IMAGE):$(BUILDER_TAG)..."
-	@cd $(SOURCE_DIR)/docker/builder && docker build \
+	@echo "→ Building builder image..."
+	@echo "  Image: $(BUILDER_IMAGE):$(BUILDER_TAG)"
+	@echo "  Dockerfile: $(BUILDER_DOCKERFILE)"
+	@echo ""
+	@docker build \
+		-f $(BUILDER_DOCKERFILE) \
 		-t $(BUILDER_IMAGE):$(BUILDER_TAG) \
-		.
+		$(BUILDER_CONTEXT)
 	@echo ""
 	@echo "✓ Builder image built successfully!"
-	@echo "  Image: $(BUILDER_IMAGE):$(BUILDER_TAG)"
-	@echo ""
-	@echo "To use this custom builder:"
-	@echo "  make build BUILDER_IMAGE=$(BUILDER_IMAGE):$(BUILDER_TAG)"
 
-# Clean builder image
-clean-builder:
-	@echo "→ Cleaning builder image..."
-	@docker rmi $(BUILDER_IMAGE):$(BUILDER_TAG) 2>/dev/null || echo "  No builder image to remove"
-	@echo "  Builder image cleaned"
-
-# ===== Build Targets =====
-
-# Main build target - orchestrates the entire build process
-build: ensure-builder start-builder copy-source run-cmake run-build run-go-build copy-artifacts
+# Build the runtime image (requires builder image)
+build-runtime: ensure-builder
+	@echo "→ Building runtime image..."
+	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
+	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE)"
 	@echo ""
-	@echo "✓ Build completed successfully!"
-	@echo "  Binary:    $(OUTPUT_DIR)/ollama"
-	@echo "  Libraries: $(OUTPUT_DIR)/lib/"
+	@echo "  This will:"
+	@echo "    - Clone ollama37 source from GitHub"
+	@echo "    - Configure with CMake (CUDA 11 preset)"
+	@echo "    - Compile C/C++/CUDA libraries"
+	@echo "    - Build Go binary"
+	@echo "    - Package runtime environment"
 	@echo ""
-	@echo "To test the binary:"
-	@echo "  cd $(OUTPUT_DIR) && ./ollama --version"
+	@docker build \
+		-f $(RUNTIME_DOCKERFILE) \
+		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
+		$(RUNTIME_CONTEXT)
+	@echo ""
+	@echo "✓ Runtime image built successfully!"
+	@echo ""
+	@echo "To start the Ollama server:"
+	@echo "  docker-compose up -d"
 
 # Ensure builder image exists (build if not present)
 ensure-builder:
 	@if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^$(BUILDER_IMAGE):$(BUILDER_TAG)$$"; then \
 		echo "→ Builder image not found. Building $(BUILDER_IMAGE):$(BUILDER_TAG)..."; \
+		echo ""; \
 		$(MAKE) build-builder; \
-	else \
-		echo "→ Builder image $(BUILDER_IMAGE):$(BUILDER_TAG) already exists"; \
+		echo ""; \
 	fi
 
-# Start the builder container with GPU access
-start-builder:
-	@echo "→ Starting builder container with GPU access..."
-	@if docker ps --format '{{.Names}}' | grep -q "^$(CONTAINER_NAME)$$"; then \
-		echo "  Container $(CONTAINER_NAME) is already running"; \
-	else \
-		echo "  Creating new builder container..."; \
-		docker run --rm -d \
-			--name $(CONTAINER_NAME) \
-			--runtime=nvidia \
-			--gpus all \
-			$(BUILDER_IMAGE):$(BUILDER_TAG) \
-			sleep infinity; \
-		sleep 2; \
-		docker exec $(CONTAINER_NAME) nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader; \
-	fi
-
-# Stop and remove the builder container
-stop-builder:
-	@echo "→ Stopping builder container..."
-	@if docker ps --format '{{.Names}}' | grep -q "^$(CONTAINER_NAME)$$"; then \
-		docker stop $(CONTAINER_NAME); \
-		echo "  Container stopped and removed (--rm flag)"; \
-	else \
-		echo "  Container not running"; \
-	fi
-
-# Copy source code to the container
-copy-source: start-builder
-	@echo "→ Copying source code to container..."
-	@docker cp $(SOURCE_DIR)/. $(CONTAINER_NAME):/usr/local/src/ollama37/
-	@echo "→ Cleaning any host build artifacts from container..."
-	@docker exec $(CONTAINER_NAME) rm -rf /usr/local/src/ollama37/build /usr/local/src/ollama37/ollama /usr/local/src/ollama37/dist
-	@echo "  Source code copied (clean build environment)"
-
-# Run CMake configuration
-run-cmake: copy-source
-	@echo "→ Running CMake configuration (preset: $(CMAKE_PRESET))..."
-	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		bash -l -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$$LD_LIBRARY_PATH CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "$(CMAKE_PRESET)"'
-
-# Run CMake build (C/C++/CUDA compilation)
-run-build: run-cmake
-	@echo "→ Building C/C++/CUDA libraries (using $(NPROC) cores)..."
-	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		bash -l -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$$LD_LIBRARY_PATH CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(NPROC)'
-
-# Run Go build
-run-go-build: run-build
-	@echo "→ Building Go binary..."
-	@docker exec -w /usr/local/src/ollama37 $(CONTAINER_NAME) \
-		bash -l -c 'go build -buildvcs=false -o ollama .'
-
-# Copy build artifacts from container to host
-copy-artifacts: run-go-build
-	@echo "→ Copying build artifacts to host..."
-	@mkdir -p $(OUTPUT_DIR)/lib
-	@docker cp $(CONTAINER_NAME):/usr/local/src/ollama37/ollama $(OUTPUT_DIR)/
-	@docker cp $(CONTAINER_NAME):/usr/local/src/ollama37/build/lib/ollama/. $(OUTPUT_DIR)/lib/
-	@echo "→ Copying GCC 10 runtime libraries..."
-	@docker cp $(CONTAINER_NAME):/usr/local/lib64/libstdc++.so.6 $(OUTPUT_DIR)/lib/
-	@docker cp $(CONTAINER_NAME):/usr/local/lib64/libstdc++.so.6.0.28 $(OUTPUT_DIR)/lib/
-	@docker cp $(CONTAINER_NAME):/usr/local/lib64/libgcc_s.so.1 $(OUTPUT_DIR)/lib/
-	@echo "  Artifacts copied to $(OUTPUT_DIR)"
-	@echo ""
-	@echo "  Binary: $(OUTPUT_DIR)/ollama"
-	@ls -lh $(OUTPUT_DIR)/ollama
-	@echo ""
-	@echo "  Libraries:"
-	@ls -lh $(OUTPUT_DIR)/lib/
-
-# Open an interactive shell in the builder container
-shell: start-builder
-	@echo "→ Opening shell in builder container..."
-	@docker exec -it -w /usr/local/src/ollama37 $(CONTAINER_NAME) bash -l
-
-# Test the built binary
-test: build
-	@echo "→ Testing ollama binary..."
-	@cd $(OUTPUT_DIR) && LD_LIBRARY_PATH=$$PWD/lib:$$LD_LIBRARY_PATH ./ollama --version
-
-# Clean build artifacts from host
+# Remove all Docker images
 clean:
-	@echo "→ Cleaning build artifacts from host..."
-	@rm -rf $(OUTPUT_DIR)
-	@echo "  Cleaned $(OUTPUT_DIR)"
-
-# Clean everything including container
-clean-all: clean stop-builder
-	@echo "→ Cleaning build directory in source..."
-	@rm -rf $(BUILD_DIR)
-	@rm -rf $(DIST_DIR)
-	@echo "  All cleaned"
-
-# ===== Runtime Image Targets =====
-
-# Build the runtime Docker image from artifacts
-build-runtime:
-	@echo "→ Building runtime Docker image..."
-	@if [ ! -f "$(OUTPUT_DIR)/ollama" ]; then \
-		echo "Error: ollama binary not found in $(OUTPUT_DIR)"; \
-		echo "Run 'make build' first to create the artifacts"; \
-		exit 1; \
-	fi
-	@if [ ! -d "$(OUTPUT_DIR)/lib" ]; then \
-		echo "Error: lib directory not found in $(OUTPUT_DIR)"; \
-		echo "Run 'make build' first to create the artifacts"; \
-		exit 1; \
-	fi
-	@echo "  Building Docker image $(RUNTIME_IMAGE):$(RUNTIME_TAG)..."
-	@docker build \
-		-f $(RUNTIME_DOCKERFILE) \
-		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
-		$(SOURCE_DIR)
-	@echo ""
-	@echo "✓ Runtime image built successfully!"
-	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
-	@echo ""
-	@echo "To run the image:"
-	@echo "  make run-runtime"
-	@echo ""
-	@echo "Or manually:"
-	@echo "  docker run --rm -it --runtime=nvidia --gpus all -p 11434:11434 $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
-	@echo ""
-	@echo "To stop the builder container:"
-	@echo "  make stop-builder"
-
-# Run the runtime container
-run-runtime:
-	@echo "→ Starting runtime container..."
-	@if docker ps -a --format '{{.Names}}' | grep -q "^ollama37-runtime$$"; then \
-		echo "  Stopping existing container..."; \
-		docker stop ollama37-runtime 2>/dev/null || true; \
-		docker rm ollama37-runtime 2>/dev/null || true; \
-	fi
-	@echo "  Starting new container..."
-	@docker run -d \
-		--name ollama37-runtime \
-		--runtime=nvidia \
-		--gpus all \
-		-p 11434:11434 \
-		-v ollama-data:/root/.ollama \
-		$(RUNTIME_IMAGE):$(RUNTIME_TAG)
-	@sleep 2
-	@echo ""
-	@echo "✓ Runtime container started!"
-	@echo "  Container: ollama37-runtime"
-	@echo "  API: http://localhost:11434"
-	@echo ""
-	@echo "Check logs:"
-	@echo "  docker logs -f ollama37-runtime"
-	@echo ""
-	@echo "Test the API:"
-	@echo "  curl http://localhost:11434/api/tags"
-	@echo ""
-	@echo "Stop the container:"
-	@echo "  make stop-runtime"
-
-# Stop the runtime container
-stop-runtime:
-	@echo "→ Stopping runtime container..."
-	@if docker ps --format '{{.Names}}' | grep -q "^ollama37-runtime$$"; then \
-		docker stop ollama37-runtime; \
-		docker rm ollama37-runtime; \
-		echo "  Container stopped and removed"; \
-	else \
-		echo "  Container not running"; \
-	fi
-
-# Clean runtime image
-clean-runtime:
-	@echo "→ Cleaning runtime image..."
+	@echo "→ Removing Docker images..."
 	@docker rmi $(RUNTIME_IMAGE):$(RUNTIME_TAG) 2>/dev/null || echo "  No runtime image to remove"
-	@docker volume rm ollama-data 2>/dev/null || echo "  No volume to remove"
-	@echo "  Runtime image cleaned"
-
-# Help target
-help:
-	@echo "Ollama Build System (with GPU-enabled builder)"
+	@docker rmi $(BUILDER_IMAGE):$(BUILDER_TAG) 2>/dev/null || echo "  No builder image to remove"
 	@echo ""
-	@echo "Builder Image Targets:"
-	@echo "  make build-builder  - Build custom builder Docker image"
-	@echo "  make clean-builder  - Remove builder image"
+	@echo "✓ Images removed"
+	@echo ""
+	@echo "Note: To remove containers and volumes, use:"
+	@echo "  docker-compose down -v"
+
+# Show help message
+help:
+	@echo "Ollama37 Docker Build System"
 	@echo ""
 	@echo "Build Targets:"
-	@echo "  make build          - Build ollama binary and libraries (default)"
-	@echo "  make clean          - Remove build artifacts from host"
-	@echo "  make clean-all      - Remove all build artifacts and stop container"
-	@echo "  make shell          - Open a shell in the builder container"
-	@echo "  make test           - Test the built binary"
-	@echo ""
-	@echo "Runtime Image Targets:"
-	@echo "  make build-runtime  - Build Docker runtime image from artifacts"
-	@echo "  make run-runtime    - Start the runtime container"
-	@echo "  make stop-runtime   - Stop the runtime container"
-	@echo "  make clean-runtime  - Remove runtime image and volumes"
-	@echo ""
+	@echo "  make build          - Build builder and runtime images (default)"
+	@echo "  make build-builder  - Build only the builder base image"
+	@echo "  make build-runtime  - Build only the runtime image"
+	@echo "  make clean          - Remove all Docker images"
 	@echo "  make help           - Show this help message"
 	@echo ""
 	@echo "Configuration:"
 	@echo "  BUILDER_IMAGE:   $(BUILDER_IMAGE):$(BUILDER_TAG)"
 	@echo "  RUNTIME_IMAGE:   $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
-	@echo "  CONTAINER_NAME:  $(CONTAINER_NAME)"
-	@echo "  CMAKE_PRESET:    $(CMAKE_PRESET)"
-	@echo "  PARALLEL_JOBS:   $(NPROC)"
 	@echo ""
-	@echo "Environment:"
-	@echo "  SOURCE_DIR:      $(SOURCE_DIR)"
-	@echo "  OUTPUT_DIR:      $(OUTPUT_DIR)"
+	@echo "Dockerfiles:"
+	@echo "  Builder:         $(BUILDER_DOCKERFILE)"
+	@echo "  Runtime:         $(RUNTIME_DOCKERFILE)"
+	@echo ""
+	@echo "Build Architecture:"
+	@echo "  1. Builder image: Base environment (CUDA 11.4, GCC 10, CMake 4, Go 1.25.3)"
+	@echo "  2. Runtime image: Two-stage build (compile + package)"
+	@echo "     - Stage 1: Clone source, compile C/C++/CUDA/Go"
+	@echo "     - Stage 2: Package runtime with compiled binaries"
+	@echo ""
+	@echo "Container Management (use docker-compose):"
+	@echo "  docker-compose up -d        - Start Ollama server"
+	@echo "  docker-compose logs -f      - View logs"
+	@echo "  docker-compose down         - Stop server"
+	@echo "  docker-compose down -v      - Stop and remove volumes"
