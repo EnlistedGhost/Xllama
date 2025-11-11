@@ -714,12 +714,15 @@ func (s *ollamaServer) Load(ctx context.Context, systemInfo ml.SystemInfo, gpus 
 		return nil, err
 	}
 
+	slog.Info("waiting for runner subprocess to start responding...")
 	if err := s.waitUntilRunnerLaunched(ctx); err != nil {
 		return nil, err
 	}
+	slog.Info("runner subprocess ready")
 
 nextOperation:
 	for operation := LoadOperationFit; operation < LoadOperationCommit; operation++ {
+		slog.Info("starting memory allocation phase", "operation", operation.String(), "layers", gpuLayers)
 	nextLoad:
 		for {
 			s.loadRequest.GPULayers = gpuLayers
@@ -747,6 +750,7 @@ nextOperation:
 				// this layout before and it doesn't have more layers than the last one, we can keep
 				// trying to see if we can do better.
 				if _, ok := pastAllocations[newGPULayers.Hash()]; !ok && newGPULayers.Sum() <= gpuLayers.Sum() {
+					slog.Info("adjusting layer allocation for better fit", "old_layers", gpuLayers.Sum(), "new_layers", newGPULayers.Sum())
 					gpuLayers = newGPULayers
 					continue nextLoad
 				}
@@ -832,10 +836,12 @@ nextOperation:
 	}
 
 	s.loadRequest.GPULayers = gpuLayers
+	slog.Info("loading model weights into memory", "operation", "commit", "layers", gpuLayers)
 	resp, err := s.initModel(ctx, s.loadRequest, LoadOperationCommit)
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("model weights loaded successfully")
 
 	success = resp.Success
 	s.mem = &resp.Memory
@@ -1105,10 +1111,18 @@ func greedyFit(layers []uint64, gpus []ml.DeviceInfo, capacity float32, requeste
 // waitUntilRunnerLaunched sleeps until the runner subprocess is alive enough
 // to respond to status requests
 func (s *llmServer) waitUntilRunnerLaunched(ctx context.Context) error {
+	start := time.Now()
+	lastLog := start
 	for {
 		_, err := s.getServerStatus(ctx)
 		if err == nil {
 			break
+		}
+
+		// Log progress every second so user knows we're waiting
+		if time.Since(lastLog) > time.Second {
+			slog.Debug("still waiting for runner subprocess to respond", "elapsed", time.Since(start).Round(time.Millisecond))
+			lastLog = time.Now()
 		}
 
 		t := time.NewTimer(10 * time.Millisecond)

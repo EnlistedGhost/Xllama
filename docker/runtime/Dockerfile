@@ -31,7 +31,13 @@ RUN bash -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$LD_LIBR
 
 # Build Go binary
 # VCS info is embedded automatically since we cloned from git
-RUN go build -o /usr/local/bin/ollama .
+# Build to source directory so binary can find libraries via relative path
+RUN go build -o ./ollama .
+
+# Create symlink to standard binary location
+# The code in ml/path.go uses filepath.EvalSymlinks() which resolves this symlink
+# to /usr/local/src/ollama37/ollama, allowing it to find libraries at build/lib/ollama
+RUN ln -s /usr/local/src/ollama37/ollama /usr/local/bin/ollama
 
 # Setup library paths for runtime
 # The binary expects libraries in these exact paths:
