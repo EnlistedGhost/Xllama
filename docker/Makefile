@@ -35,7 +35,10 @@ RUNTIME_DOCKERFILE := $(SOURCE_DIR)/docker/runtime/Dockerfile
 BUILDER_CONTEXT := $(SOURCE_DIR)/docker/builder
 RUNTIME_CONTEXT := $(SOURCE_DIR)
 
-.PHONY: all build build-builder build-runtime ensure-builder clean help
+# Dockerfiles
+RUNTIME_DOCKERFILE_LOCAL := $(SOURCE_DIR)/docker/runtime/Dockerfile.local
+
+.PHONY: all build build-builder build-runtime build-runtime-no-cache build-runtime-local build-runtime-local-no-cache ensure-builder clean help
 
 # Default target
 all: build
@@ -74,6 +77,7 @@ build-runtime: ensure-builder
 	@echo "→ Building runtime image..."
 	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
 	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE)"
+	@echo "  Source: GitHub (uses cache)"
 	@echo ""
 	@echo "  This will:"
 	@echo "    - Clone ollama37 source from GitHub"
@@ -84,6 +88,78 @@ build-runtime: ensure-builder
 	@echo ""
 	@docker build \
 		-f $(RUNTIME_DOCKERFILE) \
+		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
+		$(RUNTIME_CONTEXT)
+	@echo ""
+	@echo "✓ Runtime image built successfully!"
+	@echo ""
+	@echo "To start the Ollama server:"
+	@echo "  docker-compose up -d"
+
+# Build runtime with --no-cache (force fresh GitHub clone)
+build-runtime-no-cache: ensure-builder
+	@echo "→ Building runtime image (no cache)..."
+	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
+	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE)"
+	@echo "  Source: GitHub (fresh clone, no cache)"
+	@echo ""
+	@echo "  This will:"
+	@echo "    - Force fresh clone from GitHub"
+	@echo "    - Rebuild all layers without cache"
+	@echo "    - Configure with CMake (CUDA 11 preset)"
+	@echo "    - Compile C/C++/CUDA libraries"
+	@echo "    - Build Go binary"
+	@echo ""
+	@docker build --no-cache \
+		-f $(RUNTIME_DOCKERFILE) \
+		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
+		$(RUNTIME_CONTEXT)
+	@echo ""
+	@echo "✓ Runtime image built successfully!"
+	@echo ""
+	@echo "To start the Ollama server:"
+	@echo "  docker-compose up -d"
+
+# Build runtime using local source code
+build-runtime-local: ensure-builder
+	@echo "→ Building runtime image (local source)..."
+	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
+	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE_LOCAL)"
+	@echo "  Source: Local directory (uses cache)"
+	@echo ""
+	@echo "  This will:"
+	@echo "    - Copy local source code to container"
+	@echo "    - Configure with CMake (CUDA 11 preset)"
+	@echo "    - Compile C/C++/CUDA libraries"
+	@echo "    - Build Go binary"
+	@echo "    - Package runtime environment"
+	@echo ""
+	@docker build \
+		-f $(RUNTIME_DOCKERFILE_LOCAL) \
+		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
+		$(RUNTIME_CONTEXT)
+	@echo ""
+	@echo "✓ Runtime image built successfully!"
+	@echo ""
+	@echo "To start the Ollama server:"
+	@echo "  docker-compose up -d"
+
+# Build runtime using local source with --no-cache
+build-runtime-local-no-cache: ensure-builder
+	@echo "→ Building runtime image (local source, no cache)..."
+	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
+	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE_LOCAL)"
+	@echo "  Source: Local directory (no cache)"
+	@echo ""
+	@echo "  This will:"
+	@echo "    - Copy local source code to container"
+	@echo "    - Rebuild all layers without cache"
+	@echo "    - Configure with CMake (CUDA 11 preset)"
+	@echo "    - Compile C/C++/CUDA libraries"
+	@echo "    - Build Go binary"
+	@echo ""
+	@docker build --no-cache \
+		-f $(RUNTIME_DOCKERFILE_LOCAL) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
 	@echo ""
@@ -117,11 +193,20 @@ help:
 	@echo "Ollama37 Docker Build System"
 	@echo ""
 	@echo "Build Targets:"
-	@echo "  make build          - Build builder and runtime images (default)"
-	@echo "  make build-builder  - Build only the builder base image"
-	@echo "  make build-runtime  - Build only the runtime image"
-	@echo "  make clean          - Remove all Docker images"
-	@echo "  make help           - Show this help message"
+	@echo "  make build                        - Build builder and runtime images (default)"
+	@echo "  make build-builder                - Build only the builder base image"
+	@echo "  make build-runtime                - Build runtime from GitHub (uses cache)"
+	@echo "  make build-runtime-no-cache       - Build runtime from GitHub (fresh clone, no cache)"
+	@echo "  make build-runtime-local          - Build runtime from local source (uses cache)"
+	@echo "  make build-runtime-local-no-cache - Build runtime from local source (no cache)"
+	@echo "  make clean                        - Remove all Docker images"
+	@echo "  make help                         - Show this help message"
+	@echo ""
+	@echo "Which Build Target to Use?"
+	@echo "  • build-runtime               - Normal builds after pushing to GitHub"
+	@echo "  • build-runtime-no-cache      - After GitHub push when Docker cache is stale"
+	@echo "  • build-runtime-local         - Quick testing of local changes without push"
+	@echo "  • build-runtime-local-no-cache- Full rebuild with local changes"
 	@echo ""
 	@echo "Configuration:"
 	@echo "  BUILDER_IMAGE:   $(BUILDER_IMAGE):$(BUILDER_TAG)"
@@ -129,13 +214,14 @@ help:
 	@echo ""
 	@echo "Dockerfiles:"
 	@echo "  Builder:         $(BUILDER_DOCKERFILE)"
-	@echo "  Runtime:         $(RUNTIME_DOCKERFILE)"
+	@echo "  Runtime (GitHub):$(RUNTIME_DOCKERFILE)"
+	@echo "  Runtime (Local): $(RUNTIME_DOCKERFILE_LOCAL)"
 	@echo ""
 	@echo "Build Architecture:"
 	@echo "  1. Builder image: Base environment (CUDA 11.4, GCC 10, CMake 4, Go 1.25.3)"
-	@echo "  2. Runtime image: Two-stage build (compile + package)"
-	@echo "     - Stage 1: Clone source, compile C/C++/CUDA/Go"
-	@echo "     - Stage 2: Package runtime with compiled binaries"
+	@echo "  2. Runtime image: Single-stage build (compile + package)"
+	@echo "     - Clone/copy source, compile C/C++/CUDA/Go"
+	@echo "     - Package runtime with compiled binaries"
 	@echo ""
 	@echo "Container Management (use docker-compose):"
 	@echo "  docker-compose up -d        - Start Ollama server"

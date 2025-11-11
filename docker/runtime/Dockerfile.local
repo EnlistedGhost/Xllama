@@ -1,0 +1,74 @@
+# Ollama37 Runtime Image - Local Development Build
+# Single-stage build: compiles and packages the binary in one image
+# This Dockerfile uses LOCAL source code instead of cloning from GitHub
+# Use this for testing changes without pushing to GitHub
+#
+# Usage: docker build -f docker/runtime/Dockerfile.local -t ollama37:latest .
+#
+# The runtime needs access to the build directory for GGML CUDA libraries
+# This ensures the compiled binary can find all required runtime libraries at:
+#   /usr/local/src/ollama37/build/lib/ollama
+
+# Base image: ollama37-builder contains GCC 10, CUDA 11.4, and build tools
+FROM ollama37-builder
+
+# Copy local source code to container
+# Build context should be the repository root
+COPY . /usr/local/src/ollama37
+
+# Set working directory for build
+WORKDIR /usr/local/src/ollama37
+
+# Configure build with CMake
+# Use "CUDA 11" preset for Tesla K80 compute capability 3.7 support
+# Set LD_LIBRARY_PATH during build so CMake can locate GCC 10 runtime libraries
+# and properly link against them (required for C++ standard library and atomics)
+RUN bash -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$LD_LIBRARY_PATH \
+    CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ \
+    cmake --preset "CUDA 11"'
+
+# Build C/C++/CUDA libraries with CMake
+# Compile all GGML CUDA kernels and Ollama native libraries
+# Use all available CPU cores (-j) for parallel compilation to speed up build
+RUN bash -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$LD_LIBRARY_PATH \
+    CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ \
+    cmake --build build -j$(nproc)'
+
+# Build Go binary
+# Build to source directory so binary can find libraries via relative path
+RUN go build -o ./ollama .
+
+# Create symlink to standard binary location
+# The code in ml/path.go uses filepath.EvalSymlinks() which resolves this symlink
+# to /usr/local/src/ollama37/ollama, allowing it to find libraries at build/lib/ollama
+RUN ln -s /usr/local/src/ollama37/ollama /usr/local/bin/ollama
+
+# Setup library paths for runtime
+# The binary expects libraries in these exact paths:
+#   /usr/local/src/ollama37/build/lib/ollama - Ollama CUDA/GGML libraries
+#   /usr/local/lib64 - GCC 10 runtime libraries (libstdc++, libgcc_s)
+#   /usr/local/cuda-11.4/lib64 - CUDA 11.4 runtime libraries
+#   /usr/lib64 - System libraries
+ENV LD_LIBRARY_PATH=/usr/local/src/ollama37/build/lib/ollama:/usr/local/lib64:/usr/local/cuda-11.4/lib64:/usr/lib64
+
+# Configure Ollama server to listen on all interfaces
+ENV OLLAMA_HOST=0.0.0.0:11434
+
+# Expose Ollama API port
+EXPOSE 11434
+
+# Create persistent volume for model storage
+# Models downloaded by Ollama will be stored here
+RUN mkdir -p /root/.ollama
+VOLUME ["/root/.ollama"]
+
+# Configure health check to verify Ollama is running
+# Uses 'ollama list' command to check if the service is responsive
+# This validates both API availability and model registry access
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/ollama list || exit 1
+
+# Set entrypoint and default command
+# Container runs 'ollama serve' by default to start the API server
+ENTRYPOINT ["/usr/local/bin/ollama"]
+CMD ["serve"]
