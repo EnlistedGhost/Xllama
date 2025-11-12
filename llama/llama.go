@@ -51,6 +51,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	_ "github.com/ollama/ollama/llama/llama.cpp/common"
@@ -329,6 +330,9 @@ func llamaProgressCallback(progress C.float, userData unsafe.Pointer) C.bool {
 // - *Model: Loaded model ready for inference
 // - error: If file not found, incompatible format, or out of memory
 func LoadModelFromFile(modelPath string, params ModelParams) (*Model, error) {
+	loadStart := time.Now()
+	slog.Info("LoadModelFromFile: starting", "path", modelPath, "num_gpu_layers", params.NumGpuLayers, "use_mmap", params.UseMmap)
+
 	// Initialize C parameters structure
 	cparams := C.llama_model_default_params()
 	cparams.n_gpu_layers = C.int(params.NumGpuLayers) // Layers to offload to GPU
@@ -367,11 +371,16 @@ func LoadModelFromFile(modelPath string, params ModelParams) (*Model, error) {
 	// 2. Allocates CPU/GPU memory for tensors
 	// 3. Loads/mmaps weights into memory
 	// 4. For Tesla K80: compiles CUDA kernels via PTX JIT (compute 3.7)
+	slog.Info("LoadModelFromFile: calling llama_model_load_from_file (CGO -> C++)")
+	cgoStart := time.Now()
 	m := Model{c: C.llama_model_load_from_file(C.CString(modelPath), cparams)}
+	slog.Info("LoadModelFromFile: llama_model_load_from_file returned", "duration_sec", time.Since(cgoStart).Seconds())
+
 	if m.c == nil {
 		return nil, fmt.Errorf("unable to load model: %s", modelPath)
 	}
 
+	slog.Info("LoadModelFromFile: COMPLETE", "total_duration_sec", time.Since(loadStart).Seconds())
 	return &m, nil
 }
 

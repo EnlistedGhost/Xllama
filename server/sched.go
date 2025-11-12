@@ -480,7 +480,10 @@ func (s *Scheduler) load(req *LlmRequest, f *ggml.GGML, systemInfo ml.SystemInfo
 	// Returns:
 	// - gpuIDs: List of GPU device IDs where model layers were loaded
 	// - err: Error if model doesn't fit or loading fails
+	slog.Info("scheduler.load: calling llama.Load() to load model into memory")
+	loadStart := time.Now()
 	gpuIDs, err := llama.Load(req.ctx, systemInfo, gpus, requireFull)
+	slog.Info("scheduler.load: llama.Load() completed", "duration_sec", time.Since(loadStart).Seconds(), "error", err)
 	if err != nil {
 		if errors.Is(err, llm.ErrLoadRequiredFull) {
 			if !requireFull {

@@ -272,7 +272,9 @@ func loadOrUnloadModel(cmd *cobra.Command, opts *runOptions) error {
 	p := progress.NewProgress(os.Stderr)
 	defer p.StopAndClear()
 
-	spinner := progress.NewSpinner("")
+	// Show a message explaining potential delays on first load
+	// For older GPUs (Tesla K80, etc.), GPU initialization can take 1-3 minutes
+	spinner := progress.NewSpinner("loading model (may take 1-3 min on first load)")
 	p.Add("", spinner)
 
 	client, err := api.ClientFromEnvironment()

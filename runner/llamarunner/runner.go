@@ -876,40 +876,56 @@ func (s *Server) loadModel(
 	threads int,
 	multiUserCache bool,
 ) {
+	loadStartTime := time.Now()
+	slog.Info("loadModel: starting model load", "model_path", mpath, "num_gpu_layers", params.NumGpuLayers)
+
 	var err error
+	modelLoadStart := time.Now()
 	s.model, err = llama.LoadModelFromFile(mpath, params)
 	if err != nil {
 		panic(err)
 	}
+	slog.Info("loadModel: model weights loaded from disk", "duration_sec", time.Since(modelLoadStart).Seconds())
 
+	ctxStart := time.Now()
 	ctxParams := llama.NewContextParams(kvSize, s.batchSize*s.parallel, s.parallel, threads, flashAttention, kvCacheType)
 	s.lc, err = llama.NewContextWithModel(s.model, ctxParams)
 	if err != nil {
 		panic(err)
 	}
+	slog.Info("loadModel: context and KV cache initialized", "kv_size", kvSize, "duration_sec", time.Since(ctxStart).Seconds())
 
-	for _, path := range lpath {
-		err := s.model.ApplyLoraFromFile(s.lc, path, 1.0, threads)
-		if err != nil {
-			panic(err)
+	if len(lpath) > 0 {
+		loraStart := time.Now()
+		for _, path := range lpath {
+			err := s.model.ApplyLoraFromFile(s.lc, path, 1.0, threads)
+			if err != nil {
+				panic(err)
+			}
 		}
+		slog.Info("loadModel: LoRA adapters applied", "count", len(lpath), "duration_sec", time.Since(loraStart).Seconds())
 	}
 
 	if ppath != "" {
+		projectorStart := time.Now()
 		var err error
 		s.image, err = NewImageContext(s.lc, ppath)
 		if err != nil {
 			panic(err)
 		}
+		slog.Info("loadModel: vision projector loaded", "projector_path", ppath, "duration_sec", time.Since(projectorStart).Seconds())
 	}
 
+	cacheStart := time.Now()
 	s.cache, err = NewInputCache(s.lc, kvSize, s.parallel, multiUserCache)
 	if err != nil {
 		panic(err)
 	}
+	slog.Info("loadModel: input cache initialized", "duration_sec", time.Since(cacheStart).Seconds())
 
 	s.status = llm.ServerStatusReady
 	s.ready.Done()
+	slog.Info("loadModel: COMPLETE - model ready for inference", "total_duration_sec", time.Since(loadStartTime).Seconds())
 }
 
 // load is the handler called by the Ollama server to process different

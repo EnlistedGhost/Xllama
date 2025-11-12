@@ -1011,6 +1011,10 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reserveWorstCaseGraph(prompt bool) error {
+	// Update progress to show we're initializing GPU
+	// This is displayed to the user during model loading
+	s.progress = 0.5
+
 	ctx := s.model.Backend().NewContext()
 	defer ctx.Close()
 
@@ -1112,6 +1116,9 @@ func (s *Server) reserveWorstCaseGraph(prompt bool) error {
 	ctx.SetBatchSize(batchSize)
 	ctx.Forward(t).Reserve()
 
+	// Update progress to show GPU initialization complete
+	s.progress = 0.9
+
 	return nil
 }
 
@@ -1126,6 +1133,9 @@ func (s *Server) allocModel(
 	kvSize int,
 	multiUserCache bool,
 ) (panicErr error) {
+	allocStart := time.Now()
+	slog.Info("allocModel: starting", "model_path", mpath, "alloc_memory", params.AllocMemory, "gpu_layers", len(params.GPULayers))
+
 	// Convert memory allocation panics to errors
 	defer func() {
 		if r := recover(); r != nil {
@@ -1143,7 +1153,10 @@ func (s *Server) allocModel(
 	}()
 
 	var err error
+	modelNewStart := time.Now()
+	slog.Info("allocModel: calling model.New() to read GGUF file")
 	s.model, err = model.New(mpath, params)
+	slog.Info("allocModel: model.New() completed", "duration_sec", time.Since(modelNewStart).Seconds())
 	if err != nil {
 		return err
 	}
@@ -1153,10 +1166,12 @@ func (s *Server) allocModel(
 		return errors.New("loras are not yet implemented")
 	}
 
+	cacheStart := time.Now()
 	s.cache, err = NewInputCache(s.model, kvCacheType, int32(kvSize), parallel, s.batchSize, multiUserCache)
 	if err != nil {
 		return err
 	}
+	slog.Info("allocModel: input cache created", "duration_sec", time.Since(cacheStart).Seconds())
 
 	if !s.cache.enabled && parallel > 1 {
 		parallel = 1
@@ -1167,12 +1182,24 @@ func (s *Server) allocModel(
 	s.seqs = make([]*Sequence, s.parallel)
 	s.seqsSem = semaphore.NewWeighted(int64(s.parallel))
 
+	graphStart := time.Now()
+
+	// Inform user about GPU initialization process
+	// For older GPUs (e.g., Tesla K80 with compute 3.7), this can take 1-3 minutes
+	// on first model load due to CUDA kernel compilation (PTX JIT).
+	fmt.Fprintf(os.Stderr, "initializing GPU compute kernels (may take 1-3 minutes on first load)...\n")
+	slog.Info("allocModel: reserving compute graphs (this tests GPU compatibility and measures memory)")
+
 	err = s.reserveWorstCaseGraph(true)
 	if err != nil {
 		return nil
 	}
 
-	return s.reserveWorstCaseGraph(false)
+	err = s.reserveWorstCaseGraph(false)
+	fmt.Fprintf(os.Stderr, "GPU initialization complete\n")
+	slog.Info("allocModel: compute graphs reserved", "duration_sec", time.Since(graphStart).Seconds())
+	slog.Info("allocModel: COMPLETE", "total_duration_sec", time.Since(allocStart).Seconds())
+	return err
 }
 
 // closeModel frees all memory associated with a model
