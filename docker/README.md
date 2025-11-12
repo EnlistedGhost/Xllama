@@ -334,6 +334,55 @@ docker exec ollama37 ldconfig -p | grep cuda
 docker info | grep -i runtime
 ```
 
+### NVIDIA UVM Device Files Missing
+
+**Symptom:** `nvidia-smi` works inside the container, but Ollama reports **0 GPUs detected** (CUDA runtime cannot find GPUs).
+
+**Root Cause:**
+
+The nvidia-uvm device files were missing on the host system.
+
+While the `nvidia-uvm` kernel module was loaded, the device files `/dev/nvidia-uvm` and `/dev/nvidia-uvm-tools` were not created.
+
+These device files are critical for CUDA runtime:
+- `nvidia-smi` only needs the basic driver (works without UVM)
+- **CUDA applications require UVM** for GPU memory allocation and kernel execution
+- Without UVM devices: CUDA reports 0 GPUs even though they exist
+
+**The Fix:**
+
+Run this single command on the **host system** (not inside the container):
+
+```bash
+nvidia-modprobe -u -c=0
+```
+
+This creates the required device files:
+- `/dev/nvidia-uvm` (major 239, minor 0)
+- `/dev/nvidia-uvm-tools` (major 239, minor 1)
+
+Then restart the container:
+
+```bash
+docker-compose restart
+```
+
+**Result:** GPUs now properly detected by CUDA runtime.
+
+**Verify the fix:**
+
+```bash
+# Check UVM device files exist on host
+ls -l /dev/nvidia-uvm*
+
+# Check Ollama logs for GPU detection
+docker-compose logs | grep -i gpu
+
+# You should see output like:
+# ollama37  | time=... level=INFO msg="Nvidia GPU detected" name="Tesla K80" vram=11441 MiB
+# ollama37  | time=... level=INFO msg="Nvidia GPU detected" name="Tesla K80" vram=11441 MiB
+```
+
 ### Model fails to load
 
 ```bash
