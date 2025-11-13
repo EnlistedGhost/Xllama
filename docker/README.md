@@ -26,7 +26,7 @@ The runtime uses the builder image as its base to ensure library path compatibil
 - NVIDIA GPU drivers (470+ for Tesla K80)
 - Verify GPU access:
   ```bash
-  docker run --rm --runtime=nvidia --gpus all nvidia/cuda:11.4.3-base-rockylinux8 nvidia-smi
+  docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
   ```
 
 ## Quick Start
@@ -49,17 +49,17 @@ This will:
 ### 2. Run with Docker Compose (Recommended)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Check logs:
 ```bash
-docker-compose logs -f
+docker compose logs -f
 ```
 
 Stop the server:
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### 3. Run Manually
@@ -212,19 +212,19 @@ docker build -f runtime/Dockerfile -t ollama37:latest .
 
 ```bash
 # Start server
-docker-compose up -d
+docker compose up -d
 
 # View logs (live tail)
-docker-compose logs -f
+docker compose logs -f
 
 # Stop server
-docker-compose down
+docker compose down
 
 # Stop and remove volumes
-docker-compose down -v
+docker compose down -v
 
 # Restart server
-docker-compose restart
+docker compose restart
 ```
 
 ### Manual Docker Commands
@@ -364,7 +364,7 @@ This creates the required device files:
 Then restart the container:
 
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
 **Result:** GPUs now properly detected by CUDA runtime.
@@ -376,7 +376,7 @@ docker-compose restart
 ls -l /dev/nvidia-uvm*
 
 # Check Ollama logs for GPU detection
-docker-compose logs | grep -i gpu
+docker compose logs | grep -i gpu
 
 # You should see output like:
 # ollama37  | time=... level=INFO msg="Nvidia GPU detected" name="Tesla K80" vram=11441 MiB
@@ -445,14 +445,14 @@ make build
 make build-runtime
 
 # Restart container
-docker-compose restart
+docker compose restart
 ```
 
 ### Rebuild everything from scratch
 
 ```bash
 # Stop and remove containers
-docker-compose down -v
+docker compose down -v
 
 # Remove images
 make clean
@@ -461,7 +461,7 @@ make clean
 make build
 
 # Start fresh
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Rebuild only builder (rare)
@@ -489,8 +489,8 @@ make build-runtime
 make build
 
 # Run and test
-docker-compose up -d
-docker-compose logs -f
+docker compose up -d
+docker compose logs -f
 
 # If issues, check inside container
 docker exec -it ollama37 bash
