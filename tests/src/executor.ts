@@ -4,6 +4,15 @@ import { TestCase, TestResult, StepResult } from './types.js'
 
 const execAsync = promisify(exec)
 
+// Strip ANSI escape codes to reduce log size
+function stripAnsi(str: string): string {
+  // Matches ANSI escape sequences including:
+  // - CSI sequences: ESC [ ... (letter) - includes ? for private modes like [?25h
+  // - OSC sequences: ESC ] ... (BEL or ESC \)
+  // - Simple escapes: ESC (letter)
+  return str.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]|\x1b[a-zA-Z]/g, '')
+}
+
 export class TestExecutor {
   private workingDir: string
   private totalTests: number = 0
@@ -23,6 +32,7 @@ export class TestExecutor {
     let stdout = ''
     let stderr = ''
     let exitCode = 0
+    let timedOut = false
 
     try {
       const result = await execAsync(command, {
@@ -37,9 +47,19 @@ export class TestExecutor {
       stdout = error.stdout || ''
       stderr = error.stderr || error.message || 'Unknown error'
       exitCode = error.code || 1
+      timedOut = error.killed === true
     }
 
     const duration = Date.now() - startTime
+
+    // Strip ANSI escape codes to reduce log size
+    stdout = stripAnsi(stdout)
+    stderr = stripAnsi(stderr)
+
+    // Add timeout indicator if command was killed
+    if (timedOut) {
+      stderr = `[TIMEOUT] Command killed after ${timeout / 1000}s\n\n${stderr}`
+    }
 
     return {
       name: '',
