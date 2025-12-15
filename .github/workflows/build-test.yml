@@ -1,11 +1,7 @@
 name: Build and Test
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger only
 
 env:
   TESTLINK_URL: http://localhost:8090
