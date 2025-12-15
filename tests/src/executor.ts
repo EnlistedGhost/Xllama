@@ -72,8 +72,8 @@ export class TestExecutor {
 
       stepResults.push(result)
 
-      // Log step result with status indicator
-      const status = result.exitCode === 0 ? '✓' : '✗'
+      // Log step result with status indicator (ASCII for CI compatibility)
+      const status = result.exitCode === 0 ? '[PASS]' : '[FAIL]'
       const duration = `${(result.duration / 1000).toFixed(1)}s`
       this.progress(`    ${status} Exit: ${result.exitCode} (${duration})`)
 
@@ -118,7 +118,7 @@ ${r.stderr || '(empty)'}
 
     const startTimestamp = new Date().toISOString().substring(11, 19)
     this.progress(`\n[${startTimestamp}] Starting ${this.totalTests} test(s)...`)
-    this.progress('─'.repeat(60))
+    this.progress('-'.repeat(60))
 
     if (concurrency === 1) {
       // Sequential execution
@@ -141,7 +141,7 @@ ${r.stderr || '(empty)'}
 
     // Summary
     const endTimestamp = new Date().toISOString().substring(11, 19)
-    this.progress('─'.repeat(60))
+    this.progress('-'.repeat(60))
     this.progress(`[${endTimestamp}] Execution complete: ${results.length} test(s)`)
 
     return results
