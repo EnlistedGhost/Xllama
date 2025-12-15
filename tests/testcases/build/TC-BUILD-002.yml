@@ -1,0 +1,27 @@
+id: TC-BUILD-002
+name: Runtime Image Build
+suite: build
+priority: 2
+timeout: 900000
+
+dependencies:
+  - TC-BUILD-001
+
+steps:
+  - name: Build runtime image
+    command: cd docker && make build-runtime-no-cache 2>&1 | tail -50
+    timeout: 900000
+
+  - name: Verify runtime image exists
+    command: docker images ollama37:latest --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+
+criteria: |
+  The runtime Docker image should build successfully from GitHub source.
+
+  Expected:
+  - Build completes without fatal errors
+  - Final output should mention "successfully" or similar completion message
+  - Runtime image "ollama37:latest" should exist after build
+  - Image size should be substantial (>10GB is expected due to CUDA)
+
+  Accept build warnings. Only fail on actual build errors.

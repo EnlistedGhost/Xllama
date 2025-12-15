@@ -1,0 +1,31 @@
+id: TC-BUILD-001
+name: Builder Image Verification
+suite: build
+priority: 1
+timeout: 120000
+
+dependencies: []
+
+steps:
+  - name: Check image exists
+    command: docker images ollama37-builder:latest --format '{{.Repository}}:{{.Tag}}'
+
+  - name: Verify CUDA toolkit
+    command: docker run --rm ollama37-builder:latest nvcc --version
+
+  - name: Verify GCC version
+    command: docker run --rm ollama37-builder:latest gcc --version | head -1
+
+  - name: Verify Go version
+    command: docker run --rm ollama37-builder:latest go version
+
+criteria: |
+  All commands should succeed (exit code 0).
+
+  Expected outputs:
+  - Image exists: should show "ollama37-builder:latest"
+  - CUDA: should show version 11.4 (accept 11.4.x)
+  - GCC: should show version 10 (accept GCC 10.x)
+  - Go: should show version 1.25 or higher
+
+  Accept minor version variations. Focus on major versions being correct.

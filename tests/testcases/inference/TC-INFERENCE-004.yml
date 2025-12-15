@@ -1,0 +1,32 @@
+id: TC-INFERENCE-004
+name: CUBLAS Fallback Verification
+suite: inference
+priority: 4
+timeout: 120000
+
+dependencies:
+  - TC-INFERENCE-002
+
+steps:
+  - name: Check for CUBLAS errors in logs
+    command: cd docker && docker compose logs 2>&1 | grep -i "CUBLAS_STATUS" | grep -v "SUCCESS" | head -10 || echo "No CUBLAS errors"
+
+  - name: Check compute capability detection
+    command: cd docker && docker compose logs 2>&1 | grep -iE "compute|capability|cc.*3" | head -10 || echo "No compute capability logs"
+
+  - name: Verify no GPU errors
+    command: cd docker && docker compose logs 2>&1 | grep -iE "error|fail" | grep -i gpu | head -10 || echo "No GPU errors"
+
+criteria: |
+  CUBLAS should work correctly on Tesla K80 using legacy fallback.
+
+  Expected:
+  - No CUBLAS_STATUS_ARCH_MISMATCH errors
+  - No CUBLAS_STATUS_NOT_SUPPORTED errors
+  - Compute capability 3.7 may be mentioned in debug logs
+  - No fatal GPU-related errors
+
+  The K80 uses legacy CUBLAS functions (cublasSgemmBatched)
+  instead of modern Ex variants. This should work transparently.
+
+  Accept warnings. Only fail on actual CUBLAS errors.

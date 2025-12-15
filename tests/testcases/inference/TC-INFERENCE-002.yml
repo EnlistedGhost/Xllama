@@ -1,0 +1,28 @@
+id: TC-INFERENCE-002
+name: Basic Inference
+suite: inference
+priority: 2
+timeout: 180000
+
+dependencies:
+  - TC-INFERENCE-001
+
+steps:
+  - name: Run simple math question
+    command: docker exec ollama37 ollama run gemma3:4b "What is 2+2? Answer with just the number." 2>&1
+    timeout: 120000
+
+  - name: Check GPU memory usage
+    command: docker exec ollama37 nvidia-smi --query-compute-apps=pid,used_memory --format=csv 2>/dev/null || echo "No GPU processes"
+
+criteria: |
+  Basic inference should work on Tesla K80.
+
+  Expected:
+  - Model responds to the math question
+  - Response should indicate "4" (accept variations: "4", "four", "The answer is 4", etc.)
+  - GPU memory should be allocated during inference
+  - No CUDA errors in output
+
+  This is AI-generated output - accept reasonable variations.
+  Focus on the model producing a coherent response.

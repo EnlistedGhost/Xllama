@@ -1,0 +1,33 @@
+{
+  "name": "ollama37-test-runner",
+  "version": "1.0.0",
+  "description": "Scalable test runner with LLM-as-judge for ollama37",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "ollama37-test": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "tsx src/cli.ts run",
+    "test:build": "tsx src/cli.ts run --suite build",
+    "test:runtime": "tsx src/cli.ts run --suite runtime",
+    "test:inference": "tsx src/cli.ts run --suite inference"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "glob": "^10.3.10",
+    "js-yaml": "^4.1.0",
+    "p-limit": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

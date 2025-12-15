@@ -1,0 +1,31 @@
+id: TC-RUNTIME-001
+name: Container Startup
+suite: runtime
+priority: 1
+timeout: 120000
+
+dependencies:
+  - TC-BUILD-002
+
+steps:
+  - name: Stop existing container
+    command: cd docker && docker compose down 2>/dev/null || true
+
+  - name: Start container with GPU
+    command: cd docker && docker compose up -d
+
+  - name: Wait for startup
+    command: sleep 15
+
+  - name: Check container status
+    command: cd docker && docker compose ps
+
+criteria: |
+  The ollama37 container should start successfully with GPU access.
+
+  Expected:
+  - Container starts without errors
+  - docker compose ps shows container in "Up" state
+  - No "Exited" or "Restarting" status
+
+  Accept startup warnings. Container should be running.

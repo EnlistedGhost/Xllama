@@ -1,0 +1,34 @@
+id: TC-INFERENCE-003
+name: API Endpoint Test
+suite: inference
+priority: 3
+timeout: 120000
+
+dependencies:
+  - TC-INFERENCE-001
+
+steps:
+  - name: Test generate endpoint (non-streaming)
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:4b","prompt":"Say hello in one word","stream":false}' \
+        | head -c 500
+
+  - name: Test generate endpoint (streaming)
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:4b","prompt":"Count from 1 to 3","stream":true}' \
+        | head -5
+
+criteria: |
+  Ollama REST API should handle inference requests.
+
+  Expected for non-streaming:
+  - Returns JSON with "response" field
+  - Response contains some greeting (hello, hi, etc.)
+
+  Expected for streaming:
+  - Returns multiple JSON lines
+  - Each line contains partial response
+
+  Accept any valid JSON response. Content may vary.
