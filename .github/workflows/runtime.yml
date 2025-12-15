@@ -1,0 +1,74 @@
+name: Runtime Tests
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      keep_container:
+        description: 'Keep container running after tests'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  workflow_call:      # Called by other workflows
+    inputs:
+      keep_container:
+        description: 'Keep container running for subsequent jobs'
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      result:
+        description: "Runtime test result"
+        value: ${{ jobs.runtime.outputs.result }}
+
+jobs:
+  runtime:
+    name: Container & Runtime Tests
+    runs-on: self-hosted
+    outputs:
+      result: ${{ steps.runtime-tests.outcome }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install test runner dependencies
+        run: cd tests && npm ci
+
+      - name: Start container
+        run: |
+          cd docker
+          docker compose down 2>/dev/null || true
+          docker compose up -d
+          sleep 10
+
+      - name: Run runtime tests
+        id: runtime-tests
+        run: |
+          cd tests
+          # Progress goes to stderr (visible), JSON results go to file
+          npm run --silent dev -- run --suite runtime --no-llm --output json > /tmp/runtime-results.json || true
+
+          echo "--- JSON Results ---"
+          cat /tmp/runtime-results.json
+
+      - name: Upload runtime results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-test-results
+          path: /tmp/runtime-results.json
+
+      - name: Stop container
+        if: ${{ inputs.keep_container != 'true' && inputs.keep_container != true }}
+        run: |
+          cd docker
+          docker compose down || true
+          echo "Container stopped"

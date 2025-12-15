@@ -1,0 +1,51 @@
+name: Build Verification
+
+on:
+  workflow_dispatch:  # Manual trigger
+  workflow_call:      # Called by other workflows
+    outputs:
+      result:
+        description: "Build test result"
+        value: ${{ jobs.build.outputs.result }}
+
+jobs:
+  build:
+    name: Build Verification
+    runs-on: self-hosted
+    outputs:
+      result: ${{ steps.build-tests.outcome }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install test runner dependencies
+        run: cd tests && npm ci
+
+      - name: Run build tests
+        id: build-tests
+        run: |
+          cd tests
+          # Progress goes to stderr (visible), JSON results go to file
+          npm run --silent dev -- run --suite build --no-llm --output json > /tmp/build-results.json || true
+
+          echo "--- JSON Results ---"
+          cat /tmp/build-results.json
+
+          # Check if any tests failed
+          if grep -q '"pass": false' /tmp/build-results.json; then
+            echo "Some build tests failed"
+            exit 1
+          fi
+
+      - name: Upload build results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-test-results
+          path: /tmp/build-results.json
