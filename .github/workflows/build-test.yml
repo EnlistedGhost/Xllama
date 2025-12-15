@@ -14,8 +14,8 @@ env:
 
 jobs:
   build:
-    name: Build Docker Images
-    runs-on: [self-hosted, k80, cuda11]
+    name: Build Verification
+    runs-on: self-hosted
 
     steps:
       - name: Checkout
@@ -50,8 +50,8 @@ jobs:
           path: /tmp/build-results.json
 
   runtime:
-    name: Runtime Tests
-    runs-on: [self-hosted, k80, cuda11]
+    name: Container & Runtime Tests
+    runs-on: self-hosted
     needs: build
 
     steps:
@@ -89,7 +89,7 @@ jobs:
 
   inference:
     name: Inference Tests
-    runs-on: [self-hosted, k80, cuda11]
+    runs-on: self-hosted
     needs: runtime
 
     steps:
@@ -120,7 +120,7 @@ jobs:
 
   llm-judge:
     name: LLM Judge Evaluation
-    runs-on: [self-hosted, k80, cuda11]
+    runs-on: self-hosted
     needs: [build, runtime, inference]
     if: always()
 
@@ -158,8 +158,8 @@ jobs:
           path: /tmp/llm-judged-results.json
 
   cleanup:
-    name: Cleanup
-    runs-on: [self-hosted, k80, cuda11]
+    name: Cleanup & Summary
+    runs-on: self-hosted
     needs: [build, runtime, inference, llm-judge]
     if: always()
 
@@ -179,9 +179,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Runtime | ${{ needs.runtime.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Inference | ${{ needs.inference.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| LLM Judge | ${{ needs.llm-judge.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Verification | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container & Runtime | ${{ needs.runtime.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Inference Tests | ${{ needs.inference.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| LLM Judge Evaluation | ${{ needs.llm-judge.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
