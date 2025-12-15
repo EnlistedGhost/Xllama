@@ -2,7 +2,7 @@ id: TC-BUILD-002
 name: Runtime Image Build
 suite: build
 priority: 2
-timeout: 3600000
+timeout: 1800000
 
 dependencies:
   - TC-BUILD-001
@@ -10,7 +10,7 @@ dependencies:
 steps:
   - name: Build runtime image
     command: cd docker && make build-runtime-no-cache 2>&1 | tee /tmp/build-runtime.log | tail -100
-    timeout: 3600000
+    timeout: 1800000
 
   - name: Show build log tail (for debugging)
     command: tail -200 /tmp/build-runtime.log 2>/dev/null || echo "No build log found"
