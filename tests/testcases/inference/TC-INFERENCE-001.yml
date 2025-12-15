@@ -18,6 +18,13 @@ steps:
   - name: Verify model available
     command: docker exec ollama37 ollama list
 
+  - name: Warmup model (preload into GPU)
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:4b","prompt":"hi","stream":false}' \
+        | jq -r '.response' | head -c 100
+    timeout: 300000
+
 criteria: |
   The gemma3:4b model should be available for inference.
 
@@ -25,6 +32,9 @@ criteria: |
   - Model is either already present or successfully downloaded
   - "ollama list" shows gemma3:4b in the output
   - No download errors
+  - Warmup step loads model into GPU memory (may take up to 3 minutes on Tesla K80)
+  - Warmup returns a response from the model
 
   Accept if model already exists (skip download).
   Model size is ~3GB, download may take time.
+  First inference loads model into VRAM - subsequent inferences will be fast.
