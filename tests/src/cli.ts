@@ -32,11 +32,13 @@ program
   .option('-d, --dry-run', 'Show what would be executed without running')
   .option('-o, --output <format>', 'Output format: console, json, junit', 'console')
   .option('--report-testlink', 'Report results to TestLink')
-  .option('--ollama-url <url>', 'Ollama server URL', 'http://localhost:11434')
-  .option('--ollama-model <model>', 'Ollama model for judging', 'gemma3:4b')
+  .option('--ollama-url <url>', 'Ollama server URL (test subject)', 'http://localhost:11434')
+  .option('--judge-url <url>', 'LLM Judge server URL (separate instance)', 'http://localhost:11435')
+  .option('--judge-model <model>', 'Model for LLM judging', 'gemma3:4b')
   .option('--testlink-url <url>', 'TestLink server URL', 'http://localhost:8090')
   .option('--testlink-api-key <key>', 'TestLink API key')
-  .option('--no-llm', 'Skip LLM judging, use simple exit code check')
+  .option('--no-llm', 'Skip LLM judging, use simple exit code check only')
+  .option('--dual-judge', 'Use both simple and LLM judge (fail if either fails)')
   .option('--testcases-dir <dir>', 'Test cases directory', defaultTestcasesDir)
   .action(async (options) => {
     log('='.repeat(60))
@@ -45,7 +47,7 @@ program
 
     const loader = new TestLoader(options.testcasesDir)
     const executor = new TestExecutor(path.join(__dirname, '..', '..'))
-    const judge = new LLMJudge(options.ollamaUrl, options.ollamaModel)
+    const judge = new LLMJudge(options.judgeUrl, options.judgeModel)
 
     // Load test cases
     log('\nLoading test cases...')
@@ -90,7 +92,49 @@ program
     // Judge results
     log('\nJudging results...')
     let judgments
-    if (options.llm === false) {
+
+    if (options.dualJudge) {
+      // Dual judge mode: run both simple and LLM, fail if either fails
+      log('  Using dual judge mode (simple + LLM)')
+
+      // Simple judge first
+      const simpleJudgments = results.map(r => judge.simpleJudge(r))
+      log('  Simple judge complete')
+
+      // LLM judge second
+      let llmJudgments
+      try {
+        llmJudgments = await judge.judgeResults(results)
+        log('  LLM judge complete')
+      } catch (error) {
+        log(`  LLM judge failed: ${error}`)
+        log('  Falling back to simple judge only')
+        llmJudgments = simpleJudgments
+      }
+
+      // Combine: fail if either judge says fail
+      judgments = simpleJudgments.map((simple, i) => {
+        const llm = llmJudgments.find(j => j.testId === simple.testId) || simple
+        const pass = simple.pass && llm.pass
+
+        let reason = ''
+        if (!pass) {
+          const reasons = []
+          if (!simple.pass) reasons.push(`Simple: ${simple.reason}`)
+          if (!llm.pass) reasons.push(`LLM: ${llm.reason}`)
+          reason = reasons.join(' | ')
+        } else {
+          reason = llm.reason || simple.reason
+        }
+
+        return {
+          testId: simple.testId,
+          pass,
+          reason
+        }
+      })
+
+    } else if (options.llm === false) {
       log('  Using simple exit code check (--no-llm)')
       judgments = results.map(r => judge.simpleJudge(r))
     } else {
