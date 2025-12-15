@@ -29,7 +29,10 @@ jobs:
         id: build-tests
         run: |
           cd tests
-          npm run dev -- run --suite build --no-llm --output json > /tmp/build-results.json 2>&1 || true
+          # Progress goes to stderr (visible), JSON results go to file
+          npm run --silent dev -- run --suite build --no-llm --output json > /tmp/build-results.json || true
+
+          echo "--- JSON Results ---"
           cat /tmp/build-results.json
 
           # Check if any tests failed
@@ -73,7 +76,10 @@ jobs:
         id: runtime-tests
         run: |
           cd tests
-          npm run dev -- run --suite runtime --no-llm --output json > /tmp/runtime-results.json 2>&1 || true
+          # Progress goes to stderr (visible), JSON results go to file
+          npm run --silent dev -- run --suite runtime --no-llm --output json > /tmp/runtime-results.json || true
+
+          echo "--- JSON Results ---"
           cat /tmp/runtime-results.json
 
       - name: Upload runtime results
@@ -104,7 +110,10 @@ jobs:
         id: inference-tests
         run: |
           cd tests
-          npm run dev -- run --suite inference --no-llm --output json > /tmp/inference-results.json 2>&1 || true
+          # Progress goes to stderr (visible), JSON results go to file
+          npm run --silent dev -- run --suite inference --no-llm --output json > /tmp/inference-results.json || true
+
+          echo "--- JSON Results ---"
           cat /tmp/inference-results.json
 
       - name: Upload inference results
@@ -143,7 +152,10 @@ jobs:
           echo "Running LLM judge evaluation..."
 
           # Re-run all tests with LLM judge using local Ollama
-          npm run dev -- run --output json > /tmp/llm-judged-results.json 2>&1 || true
+          # Progress goes to stderr (visible), JSON results go to file
+          npm run --silent dev -- run --output json > /tmp/llm-judged-results.json || true
+
+          echo "--- JSON Results ---"
           cat /tmp/llm-judged-results.json
 
       - name: Upload final results

@@ -6,9 +6,16 @@ const execAsync = promisify(exec)
 
 export class TestExecutor {
   private workingDir: string
+  private totalTests: number = 0
+  private currentTest: number = 0
 
   constructor(workingDir: string = process.cwd()) {
     this.workingDir = workingDir
+  }
+
+  // Progress output goes to stderr (visible in console)
+  private progress(msg: string): void {
+    process.stderr.write(msg + '\n')
   }
 
   async executeStep(command: string, timeout: number): Promise<StepResult> {
@@ -47,11 +54,17 @@ export class TestExecutor {
   async executeTestCase(testCase: TestCase): Promise<TestResult> {
     const startTime = Date.now()
     const stepResults: StepResult[] = []
+    const timestamp = new Date().toISOString().substring(11, 19)
 
-    console.log(`  Executing: ${testCase.id} - ${testCase.name}`)
+    this.currentTest++
+    this.progress(`[${timestamp}] [${this.currentTest}/${this.totalTests}] ${testCase.id}: ${testCase.name}`)
 
-    for (const step of testCase.steps) {
-      console.log(`    Step: ${step.name}`)
+    for (let i = 0; i < testCase.steps.length; i++) {
+      const step = testCase.steps[i]
+      const stepTimestamp = new Date().toISOString().substring(11, 19)
+
+      this.progress(`  [${stepTimestamp}] Step ${i + 1}/${testCase.steps.length}: ${step.name}`)
+      this.progress(`    Command: ${step.command.substring(0, 80)}${step.command.length > 80 ? '...' : ''}`)
 
       const timeout = step.timeout || testCase.timeout
       const result = await this.executeStep(step.command, timeout)
@@ -59,11 +72,15 @@ export class TestExecutor {
 
       stepResults.push(result)
 
-      // Log step result
-      if (result.exitCode === 0) {
-        console.log(`      Exit: ${result.exitCode} (${result.duration}ms)`)
-      } else {
-        console.log(`      Exit: ${result.exitCode} (FAILED, ${result.duration}ms)`)
+      // Log step result with status indicator
+      const status = result.exitCode === 0 ? '✓' : '✗'
+      const duration = `${(result.duration / 1000).toFixed(1)}s`
+      this.progress(`    ${status} Exit: ${result.exitCode} (${duration})`)
+
+      // Show brief error output if failed
+      if (result.exitCode !== 0 && result.stderr) {
+        const errorPreview = result.stderr.split('\n')[0].substring(0, 100)
+        this.progress(`    Error: ${errorPreview}`)
       }
     }
 
@@ -95,6 +112,14 @@ ${r.stderr || '(empty)'}
   async executeAll(testCases: TestCase[], concurrency: number = 1): Promise<TestResult[]> {
     const results: TestResult[] = []
 
+    // Set total for progress tracking
+    this.totalTests = testCases.length
+    this.currentTest = 0
+
+    const startTimestamp = new Date().toISOString().substring(11, 19)
+    this.progress(`\n[${startTimestamp}] Starting ${this.totalTests} test(s)...`)
+    this.progress('─'.repeat(60))
+
     if (concurrency === 1) {
       // Sequential execution
       for (const tc of testCases) {
@@ -113,6 +138,11 @@ ${r.stderr || '(empty)'}
       const parallelResults = await Promise.all(promises)
       results.push(...parallelResults)
     }
+
+    // Summary
+    const endTimestamp = new Date().toISOString().substring(11, 19)
+    this.progress('─'.repeat(60))
+    this.progress(`[${endTimestamp}] Execution complete: ${results.length} test(s)`)
 
     return results
   }
