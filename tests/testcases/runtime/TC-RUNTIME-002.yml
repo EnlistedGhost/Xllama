@@ -2,7 +2,7 @@ id: TC-RUNTIME-002
 name: GPU Detection
 suite: runtime
 priority: 2
-timeout: 60000
+timeout: 120000
 
 dependencies:
   - TC-RUNTIME-001
@@ -14,16 +14,32 @@ steps:
   - name: Check CUDA libraries
     command: docker exec ollama37 ldconfig -p | grep -i cuda | head -5
 
-  - name: Check Ollama GPU detection
-    command: cd docker && docker compose logs 2>&1 | grep -i gpu | head -10
+  - name: Check UVM device files (create if missing)
+    command: |
+      if [ ! -e /dev/nvidia-uvm ]; then
+        echo "UVM device missing, creating with nvidia-modprobe..."
+        sudo nvidia-modprobe -u -c=0
+        echo "Restarting container to pick up UVM devices..."
+        cd docker && docker compose restart
+        sleep 15
+      else
+        echo "UVM device exists: $(ls -l /dev/nvidia-uvm)"
+      fi
+
+  - name: Check Ollama GPU detection in logs
+    command: |
+      cd docker && docker compose logs 2>&1 | grep -E "(inference compute|GPU detected)" | tail -5
 
 criteria: |
-  Tesla K80 GPU should be detected inside the container.
+  Tesla K80 GPU should be detected by both nvidia-smi AND Ollama CUDA runtime.
 
   Expected:
-  - nvidia-smi shows Tesla K80 GPU(s)
-  - Driver version 470.x (or compatible)
+  - nvidia-smi shows Tesla K80 GPU(s) with Driver 470.x
   - CUDA libraries are available (libcuda, libcublas, etc.)
-  - Ollama logs mention GPU detection
+  - /dev/nvidia-uvm device file exists (required for CUDA runtime)
+  - Ollama logs show GPU detection, NOT "id=cpu library=cpu"
+
+  NOTE: If nvidia-smi works but Ollama shows only CPU, the UVM device
+  files are missing. The test will auto-fix with nvidia-modprobe -u -c=0.
 
   The K80 has 12GB VRAM per GPU. Accept variations in reported memory.
