@@ -37,9 +37,12 @@ jobs:
           echo "--- JSON Results ---"
           cat /tmp/build-results.json
 
-          # Check if any tests failed
-          if grep -q '"pass": false' /tmp/build-results.json; then
-            echo "Some build tests failed"
+      - name: Check test results
+        run: |
+          FAILED=$(jq '.summary.failed' /tmp/build-results.json)
+          echo "Failed tests: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED build test(s) failed"
             exit 1
           fi
 

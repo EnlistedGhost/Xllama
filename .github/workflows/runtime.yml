@@ -59,6 +59,15 @@ jobs:
           echo "--- JSON Results ---"
           cat /tmp/runtime-results.json
 
+      - name: Check test results
+        run: |
+          FAILED=$(jq '.summary.failed' /tmp/runtime-results.json)
+          echo "Failed tests: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED runtime test(s) failed"
+            exit 1
+          fi
+
       - name: Upload runtime results
         uses: actions/upload-artifact@v4
         if: always()

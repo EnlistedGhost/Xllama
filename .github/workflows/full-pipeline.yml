@@ -67,6 +67,15 @@ jobs:
           echo "--- JSON Results ---"
           cat /tmp/runtime-results.json
 
+      - name: Check test results
+        run: |
+          FAILED=$(jq '.summary.failed' /tmp/runtime-results.json)
+          echo "Failed tests: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED runtime test(s) failed"
+            exit 1
+          fi
+
       - name: Upload runtime results
         uses: actions/upload-artifact@v4
         if: always()
@@ -99,6 +108,15 @@ jobs:
 
           echo "--- JSON Results ---"
           cat /tmp/inference-results.json
+
+      - name: Check test results
+        run: |
+          FAILED=$(jq '.summary.failed' /tmp/inference-results.json)
+          echo "Failed tests: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED inference test(s) failed"
+            exit 1
+          fi
 
       - name: Upload inference results
         uses: actions/upload-artifact@v4
@@ -138,6 +156,15 @@ jobs:
 
           echo "--- JSON Results ---"
           cat /tmp/llm-judged-results.json
+
+      - name: Check test results
+        run: |
+          FAILED=$(jq '.summary.failed' /tmp/llm-judged-results.json)
+          echo "Failed tests: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED test(s) failed LLM evaluation"
+            exit 1
+          fi
 
       - name: Upload final results
         uses: actions/upload-artifact@v4
