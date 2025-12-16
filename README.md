@@ -1,624 +1,548 @@
-<div align="center">
-  <a href="https://ollama.com">
-    <img alt="ollama" width="240" src="https://github.com/ollama/ollama/assets/3325447/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7">
-  </a>
-</div>
+# Ollama37 Docker Build System
 
-# Ollama
+**Two-stage Docker build for Ollama with CUDA 11.4 and Compute Capability 3.7 support (Tesla K80)**
 
-Get up and running with large language models.
+## Overview
 
-### macOS
+This Docker build system uses a two-stage architecture to build and run Ollama with Tesla K80 (compute capability 3.7) support:
 
-[Download](https://ollama.com/download/Ollama.dmg)
+1. **Builder Image** (`builder/Dockerfile`) - Base environment with build tools
+   - Rocky Linux 8
+   - CUDA 11.4 toolkit (required for Tesla K80)
+   - GCC 10 (built from source, required by CUDA 11.4)
+   - CMake 4.0 (built from source)
+   - Go 1.25.3
 
-### Windows
+2. **Runtime Image** (`runtime/Dockerfile`) - Two-stage build process
+   - **Stage 1 (compile)**: Clone source → Configure CMake → Build C/C++/CUDA → Build Go binary
+   - **Stage 2 (runtime)**: Copy artifacts → Setup runtime environment
 
-[Download](https://ollama.com/download/OllamaSetup.exe)
+The runtime uses the builder image as its base to ensure library path compatibility between build and runtime environments.
 
-### Linux
+## Prerequisites
 
-```shell
-curl -fsSL https://ollama.com/install.sh | sh
+- Docker with NVIDIA Container Runtime
+- Docker Compose
+- NVIDIA GPU drivers (470+ for Tesla K80)
+- Verify GPU access:
+  ```bash
+  docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+  ```
+
+## Quick Start
+
+### 1. Build Images
+
+```bash
+cd /home/jack/Documents/ollama37/docker
+make build
 ```
 
-[Manual install instructions](https://docs.ollama.com/linux#manual-install)
+This will:
+1. Build the builder image (if not present) - **~90 minutes first time**
+2. Build the runtime image - **~10 minutes**
 
-### Docker
+**First-time build:** ~100 minutes total (includes building GCC 10 and CMake 4 from source)
 
-The official [Ollama Docker image](https://hub.docker.com/r/ollama/ollama) `ollama/ollama` is available on Docker Hub.
+**Subsequent builds:** ~10 minutes (builder image is cached)
 
-### Libraries
+### 2. Run with Docker Compose (Recommended)
 
-- [ollama-python](https://github.com/ollama/ollama-python)
-- [ollama-js](https://github.com/ollama/ollama-js)
-
-### Community
-
-- [Discord](https://discord.gg/ollama)
-- [Reddit](https://reddit.com/r/ollama)
-
-## Quickstart
-
-To run and chat with [Gemma 3](https://ollama.com/library/gemma3):
-
-```shell
-ollama run gemma3
+```bash
+docker compose up -d
 ```
 
-## Model library
-
-Ollama supports a list of models available on [ollama.com/library](https://ollama.com/library 'ollama model library')
-
-Here are some example models that can be downloaded:
-
-| Model              | Parameters | Size  | Download                         |
-| ------------------ | ---------- | ----- | -------------------------------- |
-| Gemma 3            | 1B         | 815MB | `ollama run gemma3:1b`           |
-| Gemma 3            | 4B         | 3.3GB | `ollama run gemma3`              |
-| Gemma 3            | 12B        | 8.1GB | `ollama run gemma3:12b`          |
-| Gemma 3            | 27B        | 17GB  | `ollama run gemma3:27b`          |
-| QwQ                | 32B        | 20GB  | `ollama run qwq`                 |
-| DeepSeek-R1        | 7B         | 4.7GB | `ollama run deepseek-r1`         |
-| DeepSeek-R1        | 671B       | 404GB | `ollama run deepseek-r1:671b`    |
-| Llama 4            | 109B       | 67GB  | `ollama run llama4:scout`        |
-| Llama 4            | 400B       | 245GB | `ollama run llama4:maverick`     |
-| Llama 3.3          | 70B        | 43GB  | `ollama run llama3.3`            |
-| Llama 3.2          | 3B         | 2.0GB | `ollama run llama3.2`            |
-| Llama 3.2          | 1B         | 1.3GB | `ollama run llama3.2:1b`         |
-| Llama 3.2 Vision   | 11B        | 7.9GB | `ollama run llama3.2-vision`     |
-| Llama 3.2 Vision   | 90B        | 55GB  | `ollama run llama3.2-vision:90b` |
-| Llama 3.1          | 8B         | 4.7GB | `ollama run llama3.1`            |
-| Llama 3.1          | 405B       | 231GB | `ollama run llama3.1:405b`       |
-| Phi 4              | 14B        | 9.1GB | `ollama run phi4`                |
-| Phi 4 Mini         | 3.8B       | 2.5GB | `ollama run phi4-mini`           |
-| Mistral            | 7B         | 4.1GB | `ollama run mistral`             |
-| Moondream 2        | 1.4B       | 829MB | `ollama run moondream`           |
-| Neural Chat        | 7B         | 4.1GB | `ollama run neural-chat`         |
-| Starling           | 7B         | 4.1GB | `ollama run starling-lm`         |
-| Code Llama         | 7B         | 3.8GB | `ollama run codellama`           |
-| Llama 2 Uncensored | 7B         | 3.8GB | `ollama run llama2-uncensored`   |
-| LLaVA              | 7B         | 4.5GB | `ollama run llava`               |
-| Granite-3.3         | 8B         | 4.9GB | `ollama run granite3.3`          |
-
-> [!NOTE]
-> You should have at least 8 GB of RAM available to run the 7B models, 16 GB to run the 13B models, and 32 GB to run the 33B models.
-
-## Customize a model
-
-### Import from GGUF
-
-Ollama supports importing GGUF models in the Modelfile:
-
-1. Create a file named `Modelfile`, with a `FROM` instruction with the local filepath to the model you want to import.
-
-   ```
-   FROM ./vicuna-33b.Q4_0.gguf
-   ```
-
-2. Create the model in Ollama
-
-   ```shell
-   ollama create example -f Modelfile
-   ```
-
-3. Run the model
-
-   ```shell
-   ollama run example
-   ```
-
-### Import from Safetensors
-
-See the [guide](https://docs.ollama.com/import) on importing models for more information.
-
-### Customize a prompt
-
-Models from the Ollama library can be customized with a prompt. For example, to customize the `llama3.2` model:
-
-```shell
-ollama pull llama3.2
+Check logs:
+```bash
+docker compose logs -f
 ```
 
-Create a `Modelfile`:
-
-```
-FROM llama3.2
-
-# set the temperature to 1 [higher is more creative, lower is more coherent]
-PARAMETER temperature 1
-
-# set the system message
-SYSTEM """
-You are Mario from Super Mario Bros. Answer as Mario, the assistant, only.
-"""
+Stop the server:
+```bash
+docker compose down
 ```
 
-Next, create and run the model:
+### 3. Run Manually
 
-```
-ollama create mario -f ./Modelfile
-ollama run mario
->>> hi
-Hello! It's your friend Mario.
-```
-
-For more information on working with a Modelfile, see the [Modelfile](https://docs.ollama.com/modelfile) documentation.
-
-## CLI Reference
-
-### Create a model
-
-`ollama create` is used to create a model from a Modelfile.
-
-```shell
-ollama create mymodel -f ./Modelfile
+```bash
+docker run -d \
+  --name ollama37 \
+  --runtime=nvidia \
+  --gpus all \
+  -p 11434:11434 \
+  -v ollama-data:/root/.ollama \
+  ollama37:latest
 ```
 
-### Pull a model
+## Usage
 
-```shell
-ollama pull llama3.2
-```
+### Using the API
 
-> This command can also be used to update a local model. Only the diff will be pulled.
+```bash
+# List models
+curl http://localhost:11434/api/tags
 
-### Remove a model
+# Pull a model
+curl http://localhost:11434/api/pull -d '{"name": "gemma3:4b"}'
 
-```shell
-ollama rm llama3.2
-```
-
-### Copy a model
-
-```shell
-ollama cp llama3.2 my-model
-```
-
-### Multiline input
-
-For multiline input, you can wrap text with `"""`:
-
-```
->>> """Hello,
-... world!
-... """
-I'm a basic program that prints the famous "Hello, world!" message to the console.
-```
-
-### Multimodal models
-
-```
-ollama run llava "What's in this image? /Users/jmorgan/Desktop/smile.png"
-```
-
-> **Output**: The image features a yellow smiley face, which is likely the central focus of the picture.
-
-### Pass the prompt as an argument
-
-```shell
-ollama run llama3.2 "Summarize this file: $(cat README.md)"
-```
-
-> **Output**: Ollama is a lightweight, extensible framework for building and running language models on the local machine. It provides a simple API for creating, running, and managing models, as well as a library of pre-built models that can be easily used in a variety of applications.
-
-### Show model information
-
-```shell
-ollama show llama3.2
-```
-
-### List models on your computer
-
-```shell
-ollama list
-```
-
-### List which models are currently loaded
-
-```shell
-ollama ps
-```
-
-### Stop a model which is currently running
-
-```shell
-ollama stop llama3.2
-```
-
-### Start Ollama
-
-`ollama serve` is used when you want to start ollama without running the desktop application.
-
-## Building
-
-See the [developer guide](https://github.com/ollama/ollama/blob/main/docs/development.md)
-
-### Running local builds
-
-Next, start the server:
-
-```shell
-./ollama serve
-```
-
-Finally, in a separate shell, run a model:
-
-```shell
-./ollama run llama3.2
-```
-
-## REST API
-
-Ollama has a REST API for running and managing models.
-
-### Generate a response
-
-```shell
+# Run inference
 curl http://localhost:11434/api/generate -d '{
-  "model": "llama3.2",
-  "prompt":"Why is the sky blue?"
+  "model": "gemma3:4b",
+  "prompt": "Why is the sky blue?",
+  "stream": false
 }'
 ```
 
-### Chat with a model
+### Using the CLI
 
-```shell
-curl http://localhost:11434/api/chat -d '{
-  "model": "llama3.2",
-  "messages": [
-    { "role": "user", "content": "why is the sky blue?" }
-  ]
-}'
+```bash
+# List models
+docker exec ollama37 ollama list
+
+# Pull a model
+docker exec ollama37 ollama pull gemma3:4b
+
+# Run a model
+docker exec ollama37 ollama run gemma3:4b "Hello!"
 ```
 
-See the [API documentation](./docs/api.md) for all endpoints.
+## Architecture
 
-## Community Integrations
+### Build System Components
 
-### Web & Desktop
+```
+docker/
+├── builder/
+│   └── Dockerfile          # Base image: CUDA 11.4, GCC 10, CMake 4, Go 1.25.3
+├── runtime/
+│   └── Dockerfile          # Two-stage: compile ollama37, package runtime
+├── Makefile                # Build orchestration (images only)
+├── docker-compose.yml      # Runtime orchestration
+└── README.md               # This file
+```
 
-- [Open WebUI](https://github.com/open-webui/open-webui)
-- [SwiftChat (macOS with ReactNative)](https://github.com/aws-samples/swift-chat)
-- [Enchanted (macOS native)](https://github.com/AugustDev/enchanted)
-- [Hollama](https://github.com/fmaclen/hollama)
-- [Lollms-Webui](https://github.com/ParisNeo/lollms-webui)
-- [LibreChat](https://github.com/danny-avila/LibreChat)
-- [Bionic GPT](https://github.com/bionic-gpt/bionic-gpt)
-- [HTML UI](https://github.com/rtcfirefly/ollama-ui)
-- [Saddle](https://github.com/jikkuatwork/saddle)
-- [TagSpaces](https://www.tagspaces.org) (A platform for file-based apps, [utilizing Ollama](https://docs.tagspaces.org/ai/) for the generation of tags and descriptions)
-- [Chatbot UI](https://github.com/ivanfioravanti/chatbot-ollama)
-- [Chatbot UI v2](https://github.com/mckaywrigley/chatbot-ui)
-- [Typescript UI](https://github.com/ollama-interface/Ollama-Gui?tab=readme-ov-file)
-- [Minimalistic React UI for Ollama Models](https://github.com/richawo/minimal-llm-ui)
-- [Ollamac](https://github.com/kevinhermawan/Ollamac)
-- [big-AGI](https://github.com/enricoros/big-AGI)
-- [Cheshire Cat assistant framework](https://github.com/cheshire-cat-ai/core)
-- [Amica](https://github.com/semperai/amica)
-- [chatd](https://github.com/BruceMacD/chatd)
-- [Ollama-SwiftUI](https://github.com/kghandour/Ollama-SwiftUI)
-- [Dify.AI](https://github.com/langgenius/dify)
-- [MindMac](https://mindmac.app)
-- [NextJS Web Interface for Ollama](https://github.com/jakobhoeg/nextjs-ollama-llm-ui)
-- [Msty](https://msty.app)
-- [Chatbox](https://github.com/Bin-Huang/Chatbox)
-- [WinForm Ollama Copilot](https://github.com/tgraupmann/WinForm_Ollama_Copilot)
-- [NextChat](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web) with [Get Started Doc](https://docs.nextchat.dev/models/ollama)
-- [Alpaca WebUI](https://github.com/mmo80/alpaca-webui)
-- [OllamaGUI](https://github.com/enoch1118/ollamaGUI)
-- [OpenAOE](https://github.com/InternLM/OpenAOE)
-- [Odin Runes](https://github.com/leonid20000/OdinRunes)
-- [LLM-X](https://github.com/mrdjohnson/llm-x) (Progressive Web App)
-- [AnythingLLM (Docker + MacOs/Windows/Linux native app)](https://github.com/Mintplex-Labs/anything-llm)
-- [Ollama Basic Chat: Uses HyperDiv Reactive UI](https://github.com/rapidarchitect/ollama_basic_chat)
-- [Ollama-chats RPG](https://github.com/drazdra/ollama-chats)
-- [IntelliBar](https://intellibar.app/) (AI-powered assistant for macOS)
-- [Jirapt](https://github.com/AliAhmedNada/jirapt) (Jira Integration to generate issues, tasks, epics)
-- [ojira](https://github.com/AliAhmedNada/ojira) (Jira chrome plugin to easily generate descriptions for tasks)
-- [QA-Pilot](https://github.com/reid41/QA-Pilot) (Interactive chat tool that can leverage Ollama models for rapid understanding and navigation of GitHub code repositories)
-- [ChatOllama](https://github.com/sugarforever/chat-ollama) (Open Source Chatbot based on Ollama with Knowledge Bases)
-- [CRAG Ollama Chat](https://github.com/Nagi-ovo/CRAG-Ollama-Chat) (Simple Web Search with Corrective RAG)
-- [RAGFlow](https://github.com/infiniflow/ragflow) (Open-source Retrieval-Augmented Generation engine based on deep document understanding)
-- [StreamDeploy](https://github.com/StreamDeploy-DevRel/streamdeploy-llm-app-scaffold) (LLM Application Scaffold)
-- [chat](https://github.com/swuecho/chat) (chat web app for teams)
-- [Lobe Chat](https://github.com/lobehub/lobe-chat) with [Integrating Doc](https://lobehub.com/docs/self-hosting/examples/ollama)
-- [Ollama RAG Chatbot](https://github.com/datvodinh/rag-chatbot.git) (Local Chat with multiple PDFs using Ollama and RAG)
-- [BrainSoup](https://www.nurgo-software.com/products/brainsoup) (Flexible native client with RAG & multi-agent automation)
-- [macai](https://github.com/Renset/macai) (macOS client for Ollama, ChatGPT, and other compatible API back-ends)
-- [RWKV-Runner](https://github.com/josStorer/RWKV-Runner) (RWKV offline LLM deployment tool, also usable as a client for ChatGPT and Ollama)
-- [Ollama Grid Search](https://github.com/dezoito/ollama-grid-search) (app to evaluate and compare models)
-- [Olpaka](https://github.com/Otacon/olpaka) (User-friendly Flutter Web App for Ollama)
-- [Casibase](https://casibase.org) (An open source AI knowledge base and dialogue system combining the latest RAG, SSO, ollama support, and multiple large language models.)
-- [OllamaSpring](https://github.com/CrazyNeil/OllamaSpring) (Ollama Client for macOS)
-- [LLocal.in](https://github.com/kartikm7/llocal) (Easy to use Electron Desktop Client for Ollama)
-- [Shinkai Desktop](https://github.com/dcSpark/shinkai-apps) (Two click install Local AI using Ollama + Files + RAG)
-- [AiLama](https://github.com/zeyoyt/ailama) (A Discord User App that allows you to interact with Ollama anywhere in Discord)
-- [Ollama with Google Mesop](https://github.com/rapidarchitect/ollama_mesop/) (Mesop Chat Client implementation with Ollama)
-- [R2R](https://github.com/SciPhi-AI/R2R) (Open-source RAG engine)
-- [Ollama-Kis](https://github.com/elearningshow/ollama-kis) (A simple easy-to-use GUI with sample custom LLM for Drivers Education)
-- [OpenGPA](https://opengpa.org) (Open-source offline-first Enterprise Agentic Application)
-- [Painting Droid](https://github.com/mateuszmigas/painting-droid) (Painting app with AI integrations)
-- [Kerlig AI](https://www.kerlig.com/) (AI writing assistant for macOS)
-- [AI Studio](https://github.com/MindWorkAI/AI-Studio)
-- [Sidellama](https://github.com/gyopak/sidellama) (browser-based LLM client)
-- [LLMStack](https://github.com/trypromptly/LLMStack) (No-code multi-agent framework to build LLM agents and workflows)
-- [BoltAI for Mac](https://boltai.com) (AI Chat Client for Mac)
-- [Harbor](https://github.com/av/harbor) (Containerized LLM Toolkit with Ollama as default backend)
-- [PyGPT](https://github.com/szczyglis-dev/py-gpt) (AI desktop assistant for Linux, Windows, and Mac)
-- [Alpaca](https://github.com/Jeffser/Alpaca) (An Ollama client application for Linux and macOS made with GTK4 and Adwaita)
-- [AutoGPT](https://github.com/Significant-Gravitas/AutoGPT/blob/master/docs/content/platform/ollama.md) (AutoGPT Ollama integration)
-- [Go-CREW](https://www.jonathanhecl.com/go-crew/) (Powerful Offline RAG in Golang)
-- [PartCAD](https://github.com/openvmp/partcad/) (CAD model generation with OpenSCAD and CadQuery)
-- [Ollama4j Web UI](https://github.com/ollama4j/ollama4j-web-ui) - Java-based Web UI for Ollama built with Vaadin, Spring Boot, and Ollama4j
-- [PyOllaMx](https://github.com/kspviswa/pyOllaMx) - macOS application capable of chatting with both Ollama and Apple MLX models.
-- [Cline](https://github.com/cline/cline) - Formerly known as Claude Dev is a VSCode extension for multi-file/whole-repo coding
-- [Cherry Studio](https://github.com/kangfenmao/cherry-studio) (Desktop client with Ollama support)
-- [ConfiChat](https://github.com/1runeberg/confichat) (Lightweight, standalone, multi-platform, and privacy-focused LLM chat interface with optional encryption)
-- [Archyve](https://github.com/nickthecook/archyve) (RAG-enabling document library)
-- [crewAI with Mesop](https://github.com/rapidarchitect/ollama-crew-mesop) (Mesop Web Interface to run crewAI with Ollama)
-- [Tkinter-based client](https://github.com/chyok/ollama-gui) (Python tkinter-based Client for Ollama)
-- [LLMChat](https://github.com/trendy-design/llmchat) (Privacy focused, 100% local, intuitive all-in-one chat interface)
-- [Local Multimodal AI Chat](https://github.com/Leon-Sander/Local-Multimodal-AI-Chat) (Ollama-based LLM Chat with support for multiple features, including PDF RAG, voice chat, image-based interactions, and integration with OpenAI.)
-- [ARGO](https://github.com/xark-argo/argo) (Locally download and run Ollama and Huggingface models with RAG and deep research on Mac/Windows/Linux)
-- [OrionChat](https://github.com/EliasPereirah/OrionChat) - OrionChat is a web interface for chatting with different AI providers
-- [G1](https://github.com/bklieger-groq/g1) (Prototype of using prompting strategies to improve the LLM's reasoning through o1-like reasoning chains.)
-- [Web management](https://github.com/lemonit-eric-mao/ollama-web-management) (Web management page)
-- [Promptery](https://github.com/promptery/promptery) (desktop client for Ollama.)
-- [Ollama App](https://github.com/JHubi1/ollama-app) (Modern and easy-to-use multi-platform client for Ollama)
-- [chat-ollama](https://github.com/annilq/chat-ollama) (a React Native client for Ollama)
-- [SpaceLlama](https://github.com/tcsenpai/spacellama) (Firefox and Chrome extension to quickly summarize web pages with ollama in a sidebar)
-- [YouLama](https://github.com/tcsenpai/youlama) (Webapp to quickly summarize any YouTube video, supporting Invidious as well)
-- [DualMind](https://github.com/tcsenpai/dualmind) (Experimental app allowing two models to talk to each other in the terminal or in a web interface)
-- [ollamarama-matrix](https://github.com/h1ddenpr0cess20/ollamarama-matrix) (Ollama chatbot for the Matrix chat protocol)
-- [ollama-chat-app](https://github.com/anan1213095357/ollama-chat-app) (Flutter-based chat app)
-- [Perfect Memory AI](https://www.perfectmemory.ai/) (Productivity AI assists personalized by what you have seen on your screen, heard, and said in the meetings)
-- [Hexabot](https://github.com/hexastack/hexabot) (A conversational AI builder)
-- [Reddit Rate](https://github.com/rapidarchitect/reddit_analyzer) (Search and Rate Reddit topics with a weighted summation)
-- [OpenTalkGpt](https://github.com/adarshM84/OpenTalkGpt) (Chrome Extension to manage open-source models supported by Ollama, create custom models, and chat with models from a user-friendly UI)
-- [VT](https://github.com/vinhnx/vt.ai) (A minimal multimodal AI chat app, with dynamic conversation routing. Supports local models via Ollama)
-- [Nosia](https://github.com/nosia-ai/nosia) (Easy to install and use RAG platform based on Ollama)
-- [Witsy](https://github.com/nbonamy/witsy) (An AI Desktop application available for Mac/Windows/Linux)
-- [Abbey](https://github.com/US-Artificial-Intelligence/abbey) (A configurable AI interface server with notebooks, document storage, and YouTube support)
-- [Minima](https://github.com/dmayboroda/minima) (RAG with on-premises or fully local workflow)
-- [aidful-ollama-model-delete](https://github.com/AidfulAI/aidful-ollama-model-delete) (User interface for simplified model cleanup)
-- [Perplexica](https://github.com/ItzCrazyKns/Perplexica) (An AI-powered search engine & an open-source alternative to Perplexity AI)
-- [Ollama Chat WebUI for Docker ](https://github.com/oslook/ollama-webui) (Support for local docker deployment, lightweight ollama webui)
-- [AI Toolkit for Visual Studio Code](https://aka.ms/ai-tooklit/ollama-docs) (Microsoft-official VSCode extension to chat, test, evaluate models with Ollama support, and use them in your AI applications.)
-- [MinimalNextOllamaChat](https://github.com/anilkay/MinimalNextOllamaChat) (Minimal Web UI for Chat and Model Control)
-- [Chipper](https://github.com/TilmanGriesel/chipper) AI interface for tinkerers (Ollama, Haystack RAG, Python)
-- [ChibiChat](https://github.com/CosmicEventHorizon/ChibiChat) (Kotlin-based Android app to chat with Ollama and Koboldcpp API endpoints)
-- [LocalLLM](https://github.com/qusaismael/localllm) (Minimal Web-App to run ollama models on it with a GUI)
-- [Ollamazing](https://github.com/buiducnhat/ollamazing) (Web extension to run Ollama models)
-- [OpenDeepResearcher-via-searxng](https://github.com/benhaotang/OpenDeepResearcher-via-searxng) (A Deep Research equivalent endpoint with Ollama support for running locally)
-- [AntSK](https://github.com/AIDotNet/AntSK) (Out-of-the-box & Adaptable RAG Chatbot)
-- [MaxKB](https://github.com/1Panel-dev/MaxKB/) (Ready-to-use & flexible RAG Chatbot)
-- [yla](https://github.com/danielekp/yla) (Web interface to freely interact with your customized models)
-- [LangBot](https://github.com/RockChinQ/LangBot) (LLM-based instant messaging bots platform, with Agents, RAG features, supports multiple platforms)
-- [1Panel](https://github.com/1Panel-dev/1Panel/) (Web-based Linux Server Management Tool)
-- [AstrBot](https://github.com/Soulter/AstrBot/) (User-friendly LLM-based multi-platform chatbot with a WebUI, supporting RAG, LLM agents, and plugins integration)
-- [Reins](https://github.com/ibrahimcetin/reins) (Easily tweak parameters, customize system prompts per chat, and enhance your AI experiments with reasoning model support.)
-- [Flufy](https://github.com/Aharon-Bensadoun/Flufy) (A beautiful chat interface for interacting with Ollama's API. Built with React, TypeScript, and Material-UI.)
-- [Ellama](https://github.com/zeozeozeo/ellama) (Friendly native app to chat with an Ollama instance)
-- [screenpipe](https://github.com/mediar-ai/screenpipe) Build agents powered by your screen history
-- [Ollamb](https://github.com/hengkysteen/ollamb) (Simple yet rich in features, cross-platform built with Flutter and designed for Ollama. Try the [web demo](https://hengkysteen.github.io/demo/ollamb/).)
-- [Writeopia](https://github.com/Writeopia/Writeopia) (Text editor with integration with Ollama)
-- [AppFlowy](https://github.com/AppFlowy-IO/AppFlowy) (AI collaborative workspace with Ollama, cross-platform and self-hostable)
-- [Lumina](https://github.com/cushydigit/lumina.git) (A lightweight, minimal React.js frontend for interacting with Ollama servers)
-- [Tiny Notepad](https://pypi.org/project/tiny-notepad) (A lightweight, notepad-like interface to chat with ollama available on PyPI)
-- [macLlama (macOS native)](https://github.com/hellotunamayo/macLlama) (A native macOS GUI application for interacting with Ollama models, featuring a chat interface.) 
-- [GPTranslate](https://github.com/philberndt/GPTranslate) (A fast and lightweight, AI powered desktop translation application written with Rust and Tauri. Features real-time translation with OpenAI/Azure/Ollama.)
-- [ollama launcher](https://github.com/NGC13009/ollama-launcher) (A launcher for Ollama, aiming to provide users with convenient functions such as ollama server launching, management, or configuration.)
-- [ai-hub](https://github.com/Aj-Seven/ai-hub) (AI Hub supports multiple models via API keys and Chat support via Ollama API.)
-- [Mayan EDMS](https://gitlab.com/mayan-edms/mayan-edms) (Open source document management system to organize, tag, search, and automate your files with powerful Ollama driven workflows.)
-- [Serene Pub](https://github.com/doolijb/serene-pub) (Beginner friendly, open source AI Roleplaying App for Windows, Mac OS and Linux. Search, download and use models with Ollama all inside the app.)
-- [Andes](https://github.com/aqerd/andes) (A Visual Studio Code extension that provides a local UI interface for Ollama models)
-- [Clueless](https://github.com/KashyapTan/clueless) (Open Source & Local Cluely: A desktop application LLM assistant to help you talk to anything on your screen using locally served Ollama models. Also undetectable to screenshare)
-- [ollama-co2](https://github.com/carbonatedWaterOrg/ollama-co2) (FastAPI web interface for monitoring and managing local and remote Ollama servers with real-time model monitoring and concurrent downloads)
-- [Hillnote](https://hillnote.com) (A Markdown-first workspace designed to supercharge your AI workflow. Create documents ready to integrate with Claude, ChatGPT, Gemini, Cursor, and more - all while keeping your work on your device.)
+### Two-Stage Build Process
 
-### Cloud
+#### Stage 1: Builder Image (`builder/Dockerfile`)
+**Purpose**: Provide consistent build environment
 
-- [Google Cloud](https://cloud.google.com/run/docs/tutorials/gpu-gemma2-with-ollama)
-- [Fly.io](https://fly.io/docs/python/do-more/add-ollama/)
-- [Koyeb](https://www.koyeb.com/deploy/ollama)
+**Contents:**
+- Rocky Linux 8 base
+- CUDA 11.4 toolkit (compilation only, no driver)
+- GCC 10 from source (~60 min build time)
+- CMake 4.0 from source (~8 min build time)
+- Go 1.25.3 binary
+- All build dependencies
 
-### Terminal
+**Build time:** ~90 minutes (first time), cached thereafter
 
-- [oterm](https://github.com/ggozad/oterm)
-- [Ellama Emacs client](https://github.com/s-kostyaev/ellama)
-- [Emacs client](https://github.com/zweifisch/ollama)
-- [neollama](https://github.com/paradoxical-dev/neollama) UI client for interacting with models from within Neovim
-- [gen.nvim](https://github.com/David-Kunz/gen.nvim)
-- [ollama.nvim](https://github.com/nomnivore/ollama.nvim)
-- [ollero.nvim](https://github.com/marco-souza/ollero.nvim)
-- [ollama-chat.nvim](https://github.com/gerazov/ollama-chat.nvim)
-- [ogpt.nvim](https://github.com/huynle/ogpt.nvim)
-- [gptel Emacs client](https://github.com/karthink/gptel)
-- [Oatmeal](https://github.com/dustinblackman/oatmeal)
-- [cmdh](https://github.com/pgibler/cmdh)
-- [ooo](https://github.com/npahlfer/ooo)
-- [shell-pilot](https://github.com/reid41/shell-pilot)(Interact with models via pure shell scripts on Linux or macOS)
-- [tenere](https://github.com/pythops/tenere)
-- [llm-ollama](https://github.com/taketwo/llm-ollama) for [Datasette's LLM CLI](https://llm.datasette.io/en/stable/).
-- [typechat-cli](https://github.com/anaisbetts/typechat-cli)
-- [ShellOracle](https://github.com/djcopley/ShellOracle)
-- [tlm](https://github.com/yusufcanb/tlm)
-- [podman-ollama](https://github.com/ericcurtin/podman-ollama)
-- [gollama](https://github.com/sammcj/gollama)
-- [ParLlama](https://github.com/paulrobello/parllama)
-- [Ollama eBook Summary](https://github.com/cognitivetech/ollama-ebook-summary/)
-- [Ollama Mixture of Experts (MOE) in 50 lines of code](https://github.com/rapidarchitect/ollama_moe)
-- [vim-intelligence-bridge](https://github.com/pepo-ec/vim-intelligence-bridge) Simple interaction of "Ollama" with the Vim editor
-- [x-cmd ollama](https://x-cmd.com/mod/ollama)
-- [bb7](https://github.com/drunkwcodes/bb7)
-- [SwollamaCLI](https://github.com/marcusziade/Swollama) bundled with the Swollama Swift package. [Demo](https://github.com/marcusziade/Swollama?tab=readme-ov-file#cli-usage)
-- [aichat](https://github.com/sigoden/aichat) All-in-one LLM CLI tool featuring Shell Assistant, Chat-REPL, RAG, AI tools & agents, with access to OpenAI, Claude, Gemini, Ollama, Groq, and more.
-- [PowershAI](https://github.com/rrg92/powershai) PowerShell module that brings AI to terminal on Windows, including support for Ollama
-- [DeepShell](https://github.com/Abyss-c0re/deepshell) Your self-hosted AI assistant. Interactive Shell, Files and Folders analysis.
-- [orbiton](https://github.com/xyproto/orbiton) Configuration-free text editor and IDE with support for tab completion with Ollama.
-- [orca-cli](https://github.com/molbal/orca-cli) Ollama Registry CLI Application - Browse, pull, and download models from Ollama Registry in your terminal.
-- [GGUF-to-Ollama](https://github.com/jonathanhecl/gguf-to-ollama) - Importing GGUF to Ollama made easy (multiplatform)
-- [AWS-Strands-With-Ollama](https://github.com/rapidarchitect/ollama_strands) - AWS Strands Agents with Ollama Examples
-- [ollama-multirun](https://github.com/attogram/ollama-multirun) - A bash shell script to run a single prompt against any or all of your locally installed ollama models, saving the output and performance statistics as easily navigable web pages. ([Demo](https://attogram.github.io/ai_test_zone/))
-- [ollama-bash-toolshed](https://github.com/attogram/ollama-bash-toolshed) - Bash scripts to chat with tool using models. Add new tools to your shed with ease. Runs on Ollama.
-- [VT Code](https://github.com/vinhnx/vtcode) - VT Code is a Rust-based terminal coding agent with semantic code intelligence via Tree-sitter. Ollama integration for running local/cloud models with configurable endpoints.
+**Image size:** ~15GB
 
-### Apple Vision Pro
+#### Stage 2: Runtime Image (`runtime/Dockerfile`)
 
-- [SwiftChat](https://github.com/aws-samples/swift-chat) (Cross-platform AI chat app supporting Apple Vision Pro via "Designed for iPad")
-- [Enchanted](https://github.com/AugustDev/enchanted)
+**Stage 2.1 - Compile** (FROM ollama37-builder)
+1. Clone ollama37 source from GitHub
+2. Configure with CMake ("CUDA 11" preset for compute 3.7)
+3. Build C/C++/CUDA libraries
+4. Build Go binary
 
-### Database
+**Stage 2.2 - Runtime** (FROM ollama37-builder)
+1. Copy entire source tree (includes compiled artifacts)
+2. Copy binary to /usr/local/bin/ollama
+3. Setup LD_LIBRARY_PATH for runtime libraries
+4. Configure server, expose ports, setup volumes
 
-- [pgai](https://github.com/timescale/pgai) - PostgreSQL as a vector database (Create and search embeddings from Ollama models using pgvector)
-   - [Get started guide](https://github.com/timescale/pgai/blob/main/docs/vectorizer-quick-start.md)
-- [MindsDB](https://github.com/mindsdb/mindsdb/blob/staging/mindsdb/integrations/handlers/ollama_handler/README.md) (Connects Ollama models with nearly 200 data platforms and apps)
-- [chromem-go](https://github.com/philippgille/chromem-go/blob/v0.5.0/embed_ollama.go) with [example](https://github.com/philippgille/chromem-go/tree/v0.5.0/examples/rag-wikipedia-ollama)
-- [Kangaroo](https://github.com/dbkangaroo/kangaroo) (AI-powered SQL client and admin tool for popular databases)
+**Build time:** ~10 minutes
 
-### Package managers
+**Image size:** ~18GB (includes build environment + compiled Ollama)
 
-- [Pacman](https://archlinux.org/packages/extra/x86_64/ollama/)
-- [Gentoo](https://github.com/gentoo/guru/tree/master/app-misc/ollama)
-- [Homebrew](https://formulae.brew.sh/formula/ollama)
-- [Helm Chart](https://artifacthub.io/packages/helm/ollama-helm/ollama)
-- [Guix channel](https://codeberg.org/tusharhero/ollama-guix)
-- [Nix package](https://search.nixos.org/packages?show=ollama&from=0&size=50&sort=relevance&type=packages&query=ollama)
-- [Flox](https://flox.dev/blog/ollama-part-one)
+### Why Both Stages Use Builder Base?
 
-### Libraries
+**Problem**: Compiled binaries have hardcoded library paths (via rpath/LD_LIBRARY_PATH)
 
-- [LangChain](https://python.langchain.com/docs/integrations/chat/ollama/) and [LangChain.js](https://js.langchain.com/docs/integrations/chat/ollama/) with [example](https://js.langchain.com/docs/tutorials/local_rag/)
-- [Firebase Genkit](https://firebase.google.com/docs/genkit/plugins/ollama)
-- [crewAI](https://github.com/crewAIInc/crewAI)
-- [Yacana](https://remembersoftwares.github.io/yacana/) (User-friendly multi-agent framework for brainstorming and executing predetermined flows with built-in tool integration)
-- [Strands Agents](https://github.com/strands-agents/sdk-python) (A model-driven approach to building AI agents in just a few lines of code)
-- [Spring AI](https://github.com/spring-projects/spring-ai) with [reference](https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html) and [example](https://github.com/tzolov/ollama-tools)
-- [LangChainGo](https://github.com/tmc/langchaingo/) with [example](https://github.com/tmc/langchaingo/tree/main/examples/ollama-completion-example)
-- [LangChain4j](https://github.com/langchain4j/langchain4j) with [example](https://github.com/langchain4j/langchain4j-examples/tree/main/ollama-examples/src/main/java)
-- [LangChainRust](https://github.com/Abraxas-365/langchain-rust) with [example](https://github.com/Abraxas-365/langchain-rust/blob/main/examples/llm_ollama.rs)
-- [LangChain for .NET](https://github.com/tryAGI/LangChain) with [example](https://github.com/tryAGI/LangChain/blob/main/examples/LangChain.Samples.OpenAI/Program.cs)
-- [LLPhant](https://github.com/theodo-group/LLPhant?tab=readme-ov-file#ollama)
-- [LlamaIndex](https://docs.llamaindex.ai/en/stable/examples/llm/ollama/) and [LlamaIndexTS](https://ts.llamaindex.ai/modules/llms/available_llms/ollama)
-- [LiteLLM](https://github.com/BerriAI/litellm)
-- [OllamaFarm for Go](https://github.com/presbrey/ollamafarm)
-- [OllamaSharp for .NET](https://github.com/awaescher/OllamaSharp)
-- [Ollama for Ruby](https://github.com/gbaptista/ollama-ai)
-- [Ollama-rs for Rust](https://github.com/pepperoni21/ollama-rs)
-- [Ollama-hpp for C++](https://github.com/jmont-dev/ollama-hpp)
-- [Ollama4j for Java](https://github.com/ollama4j/ollama4j)
-- [ModelFusion Typescript Library](https://modelfusion.dev/integration/model-provider/ollama)
-- [OllamaKit for Swift](https://github.com/kevinhermawan/OllamaKit)
-- [Ollama for Dart](https://github.com/breitburg/dart-ollama)
-- [Ollama for Laravel](https://github.com/cloudstudio/ollama-laravel)
-- [LangChainDart](https://github.com/davidmigloz/langchain_dart)
-- [Semantic Kernel - Python](https://github.com/microsoft/semantic-kernel/tree/main/python/semantic_kernel/connectors/ai/ollama)
-- [Haystack](https://github.com/deepset-ai/haystack-integrations/blob/main/integrations/ollama.md)
-- [Elixir LangChain](https://github.com/brainlid/langchain)
-- [Ollama for R - rollama](https://github.com/JBGruber/rollama)
-- [Ollama for R - ollama-r](https://github.com/hauselin/ollama-r)
-- [Ollama-ex for Elixir](https://github.com/lebrunel/ollama-ex)
-- [Ollama Connector for SAP ABAP](https://github.com/b-tocs/abap_btocs_ollama)
-- [Testcontainers](https://testcontainers.com/modules/ollama/)
-- [Portkey](https://portkey.ai/docs/welcome/integration-guides/ollama)
-- [PromptingTools.jl](https://github.com/svilupp/PromptingTools.jl) with an [example](https://svilupp.github.io/PromptingTools.jl/dev/examples/working_with_ollama)
-- [LlamaScript](https://github.com/Project-Llama/llamascript)
-- [llm-axe](https://github.com/emirsahin1/llm-axe) (Python Toolkit for Building LLM Powered Apps)
-- [Gollm](https://docs.gollm.co/examples/ollama-example)
-- [Gollama for Golang](https://github.com/jonathanhecl/gollama)
-- [Ollamaclient for Golang](https://github.com/xyproto/ollamaclient)
-- [High-level function abstraction in Go](https://gitlab.com/tozd/go/fun)
-- [Ollama PHP](https://github.com/ArdaGnsrn/ollama-php)
-- [Agents-Flex for Java](https://github.com/agents-flex/agents-flex) with [example](https://github.com/agents-flex/agents-flex/tree/main/agents-flex-llm/agents-flex-llm-ollama/src/test/java/com/agentsflex/llm/ollama)
-- [Parakeet](https://github.com/parakeet-nest/parakeet) is a GoLang library, made to simplify the development of small generative AI applications with Ollama.
-- [Haverscript](https://github.com/andygill/haverscript) with [examples](https://github.com/andygill/haverscript/tree/main/examples)
-- [Ollama for Swift](https://github.com/mattt/ollama-swift)
-- [Swollama for Swift](https://github.com/marcusziade/Swollama) with [DocC](https://marcusziade.github.io/Swollama/documentation/swollama/)
-- [GoLamify](https://github.com/prasad89/golamify)
-- [Ollama for Haskell](https://github.com/tusharad/ollama-haskell)
-- [multi-llm-ts](https://github.com/nbonamy/multi-llm-ts) (A Typescript/JavaScript library allowing access to different LLM in a unified API)
-- [LlmTornado](https://github.com/lofcz/llmtornado) (C# library providing a unified interface for major FOSS & Commercial inference APIs)
-- [Ollama for Zig](https://github.com/dravenk/ollama-zig)
-- [Abso](https://github.com/lunary-ai/abso) (OpenAI-compatible TypeScript SDK for any LLM provider)
-- [Nichey](https://github.com/goodreasonai/nichey) is a Python package for generating custom wikis for your research topic
-- [Ollama for D](https://github.com/kassane/ollama-d)
-- [OllamaPlusPlus](https://github.com/HardCodeDev777/OllamaPlusPlus) (Very simple C++ library for Ollama)
-- [any-llm](https://github.com/mozilla-ai/any-llm) (A single interface to use different llm providers by [mozilla.ai](https://www.mozilla.ai/))
-- [any-agent](https://github.com/mozilla-ai/any-agent) (A single interface to use and evaluate different agent frameworks by [mozilla.ai](https://www.mozilla.ai/))
-- [Neuro SAN](https://github.com/cognizant-ai-lab/neuro-san-studio) (Data-driven multi-agent orchestration framework) with [example](https://github.com/cognizant-ai-lab/neuro-san-studio/blob/main/docs/user_guide.md#ollama)
-- [achatbot-go](https://github.com/ai-bot-pro/achatbot-go) a multimodal(text/audio/image) chatbot.
-- [Ollama Bash Lib](https://github.com/attogram/ollama-bash-lib) - A Bash Library for Ollama. Run LLM prompts straight from your shell, and more
+**Solution**: Use identical base images for compile and runtime stages
 
-### Mobile
+**Benefits:**
+- ✅ Library paths match between build and runtime
+- ✅ All GCC 10 runtime libraries present
+- ✅ All CUDA libraries at expected paths
+- ✅ No complex artifact extraction/copying
+- ✅ Guaranteed compatibility
 
-- [SwiftChat](https://github.com/aws-samples/swift-chat) (Lightning-fast Cross-platform AI chat app with native UI for Android, iOS, and iPad)
-- [Enchanted](https://github.com/AugustDev/enchanted)
-- [Maid](https://github.com/Mobile-Artificial-Intelligence/maid)
-- [Ollama App](https://github.com/JHubi1/ollama-app) (Modern and easy-to-use multi-platform client for Ollama)
-- [ConfiChat](https://github.com/1runeberg/confichat) (Lightweight, standalone, multi-platform, and privacy-focused LLM chat interface with optional encryption)
-- [Ollama Android Chat](https://github.com/sunshine0523/OllamaServer) (No need for Termux, start the Ollama service with one click on an Android device)
-- [Reins](https://github.com/ibrahimcetin/reins) (Easily tweak parameters, customize system prompts per chat, and enhance your AI experiments with reasoning model support.)
+**Trade-off:** Larger runtime image (~18GB) vs complexity and reliability issues
 
-### Extensions & Plugins
+### Alternative: Single-Stage Build
 
-- [Raycast extension](https://github.com/MassimilianoPasquini97/raycast_ollama)
-- [Discollama](https://github.com/mxyng/discollama) (Discord bot inside the Ollama discord channel)
-- [Continue](https://github.com/continuedev/continue)
-- [Vibe](https://github.com/thewh1teagle/vibe) (Transcribe and analyze meetings with Ollama)
-- [Obsidian Ollama plugin](https://github.com/hinterdupfinger/obsidian-ollama)
-- [Logseq Ollama plugin](https://github.com/omagdy7/ollama-logseq)
-- [NotesOllama](https://github.com/andersrex/notesollama) (Apple Notes Ollama plugin)
-- [Dagger Chatbot](https://github.com/samalba/dagger-chatbot)
-- [Discord AI Bot](https://github.com/mekb-turtle/discord-ai-bot)
-- [Ollama Telegram Bot](https://github.com/ruecat/ollama-telegram)
-- [Hass Ollama Conversation](https://github.com/ej52/hass-ollama-conversation)
-- [Rivet plugin](https://github.com/abrenneke/rivet-plugin-ollama)
-- [Obsidian BMO Chatbot plugin](https://github.com/longy2k/obsidian-bmo-chatbot)
-- [Cliobot](https://github.com/herval/cliobot) (Telegram bot with Ollama support)
-- [Copilot for Obsidian plugin](https://github.com/logancyang/obsidian-copilot)
-- [Obsidian Local GPT plugin](https://github.com/pfrankov/obsidian-local-gpt)
-- [Open Interpreter](https://docs.openinterpreter.com/language-model-setup/local-models/ollama)
-- [Llama Coder](https://github.com/ex3ndr/llama-coder) (Copilot alternative using Ollama)
-- [Ollama Copilot](https://github.com/bernardo-bruning/ollama-copilot) (Proxy that allows you to use Ollama as a copilot like GitHub Copilot)
-- [twinny](https://github.com/rjmacarthy/twinny) (Copilot and Copilot chat alternative using Ollama)
-- [Wingman-AI](https://github.com/RussellCanfield/wingman-ai) (Copilot code and chat alternative using Ollama and Hugging Face)
-- [Page Assist](https://github.com/n4ze3m/page-assist) (Chrome Extension)
-- [Plasmoid Ollama Control](https://github.com/imoize/plasmoid-ollamacontrol) (KDE Plasma extension that allows you to quickly manage/control Ollama model)
-- [AI Telegram Bot](https://github.com/tusharhero/aitelegrambot) (Telegram bot using Ollama in backend)
-- [AI ST Completion](https://github.com/yaroslavyaroslav/OpenAI-sublime-text) (Sublime Text 4 AI assistant plugin with Ollama support)
-- [Discord-Ollama Chat Bot](https://github.com/kevinthedang/discord-ollama) (Generalized TypeScript Discord Bot w/ Tuning Documentation)
-- [ChatGPTBox: All in one browser extension](https://github.com/josStorer/chatGPTBox) with [Integrating Tutorial](https://github.com/josStorer/chatGPTBox/issues/616#issuecomment-1975186467)
-- [Discord AI chat/moderation bot](https://github.com/rapmd73/Companion) Chat/moderation bot written in python. Uses Ollama to create personalities.
-- [Headless Ollama](https://github.com/nischalj10/headless-ollama) (Scripts to automatically install ollama client & models on any OS for apps that depend on ollama server)
-- [Terraform AWS Ollama & Open WebUI](https://github.com/xuyangbocn/terraform-aws-self-host-llm) (A Terraform module to deploy on AWS a ready-to-use Ollama service, together with its front-end Open WebUI service.)
-- [node-red-contrib-ollama](https://github.com/jakubburkiewicz/node-red-contrib-ollama)
-- [Local AI Helper](https://github.com/ivostoykov/localAI) (Chrome and Firefox extensions that enable interactions with the active tab and customisable API endpoints. Includes secure storage for user prompts.)
-- [vnc-lm](https://github.com/jake83741/vnc-lm) (Discord bot for messaging with LLMs through Ollama and LiteLLM. Seamlessly move between local and flagship models.)
-- [LSP-AI](https://github.com/SilasMarvin/lsp-ai) (Open-source language server for AI-powered functionality)
-- [QodeAssist](https://github.com/Palm1r/QodeAssist) (AI-powered coding assistant plugin for Qt Creator)
-- [Obsidian Quiz Generator plugin](https://github.com/ECuiDev/obsidian-quiz-generator)
-- [AI Summmary Helper plugin](https://github.com/philffm/ai-summary-helper)
-- [TextCraft](https://github.com/suncloudsmoon/TextCraft) (Copilot in Word alternative using Ollama)
-- [Alfred Ollama](https://github.com/zeitlings/alfred-ollama) (Alfred Workflow)
-- [TextLLaMA](https://github.com/adarshM84/TextLLaMA) A Chrome Extension that helps you write emails, correct grammar, and translate into any language
-- [Simple-Discord-AI](https://github.com/zyphixor/simple-discord-ai)
-- [LLM Telegram Bot](https://github.com/innightwolfsleep/llm_telegram_bot) (telegram bot, primary for RP. Oobabooga-like buttons, [A1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui) API integration e.t.c)
-- [mcp-llm](https://github.com/sammcj/mcp-llm) (MCP Server to allow LLMs to call other LLMs)
-- [SimpleOllamaUnity](https://github.com/HardCodeDev777/SimpleOllamaUnity) (Unity Engine extension for communicating with Ollama in a few lines of code. Also works at runtime)
-- [UnityCodeLama](https://github.com/HardCodeDev777/UnityCodeLama) (Unity Edtior tool to analyze scripts via Ollama)
-- [NativeMind](https://github.com/NativeMindBrowser/NativeMindExtension) (Private, on-device AI Assistant, no cloud dependencies)
-- [GMAI - Gradle Managed AI](https://gmai.premex.se/) (Gradle plugin for automated Ollama lifecycle management during build phases)
-- [NOMYO Router](https://github.com/nomyo-ai/nomyo-router) (A transparent Ollama proxy with model deployment aware routing which auto-manages multiple Ollama instances in a given network)
+See `Dockerfile.single-stage.archived` for the original single-stage design that inspired this architecture.
 
-### Supported backends
+## Build Commands
 
-- [llama.cpp](https://github.com/ggml-org/llama.cpp) project founded by Georgi Gerganov.
+### Using the Makefile
 
-### Observability
-- [Opik](https://www.comet.com/docs/opik/cookbook/ollama) is an open-source platform to debug, evaluate, and monitor your LLM applications, RAG systems, and agentic workflows with comprehensive tracing, automated evaluations, and production-ready dashboards. Opik supports native intergration to Ollama.
-- [Lunary](https://lunary.ai/docs/integrations/ollama) is the leading open-source LLM observability platform. It provides a variety of enterprise-grade features such as real-time analytics, prompt templates management, PII masking, and comprehensive agent tracing.
-- [OpenLIT](https://github.com/openlit/openlit) is an OpenTelemetry-native tool for monitoring Ollama Applications & GPUs using traces and metrics.
-- [HoneyHive](https://docs.honeyhive.ai/integrations/ollama) is an AI observability and evaluation platform for AI agents. Use HoneyHive to evaluate agent performance, interrogate failures, and monitor quality in production.
-- [Langfuse](https://langfuse.com/docs/integrations/ollama) is an open source LLM observability platform that enables teams to collaboratively monitor, evaluate and debug AI applications.
-- [MLflow Tracing](https://mlflow.org/docs/latest/llms/tracing/index.html#automatic-tracing) is an open source LLM observability tool with a convenient API to log and visualize traces, making it easy to debug and evaluate GenAI applications.
+```bash
+# Build both builder and runtime images
+make build
+
+# Build only builder image
+make build-builder
+
+# Build only runtime image (will auto-build builder if needed)
+make build-runtime
+
+# Remove all images
+make clean
+
+# Show help
+make help
+```
+
+### Direct Docker Commands
+
+```bash
+# Build builder image
+docker build -f builder/Dockerfile -t ollama37-builder:latest builder/
+
+# Build runtime image
+docker build -f runtime/Dockerfile -t ollama37:latest .
+```
+
+## Runtime Management
+
+### Using Docker Compose (Recommended)
+
+```bash
+# Start server
+docker compose up -d
+
+# View logs (live tail)
+docker compose logs -f
+
+# Stop server
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+
+# Restart server
+docker compose restart
+```
+
+### Manual Docker Commands
+
+```bash
+# Start container
+docker run -d \
+  --name ollama37 \
+  --runtime=nvidia \
+  --gpus all \
+  -p 11434:11434 \
+  -v ollama-data:/root/.ollama \
+  ollama37:latest
+
+# View logs
+docker logs -f ollama37
+
+# Stop container
+docker stop ollama37
+docker rm ollama37
+
+# Shell access
+docker exec -it ollama37 bash
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_HOST` | `0.0.0.0:11434` | Server listen address |
+| `LD_LIBRARY_PATH` | `/usr/local/src/ollama37/build/lib/ollama:/usr/local/lib64:/usr/local/cuda-11.4/lib64:/usr/lib64` | Library search path |
+| `NVIDIA_VISIBLE_DEVICES` | `all` | Which GPUs to use |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility` | GPU capabilities |
+| `OLLAMA_DEBUG` | (unset) | Enable verbose Ollama logging |
+| `GGML_CUDA_DEBUG` | (unset) | Enable CUDA/CUBLAS debug logging |
+
+### Volume Mounts
+
+- `/root/.ollama` - Model storage (use Docker volume `ollama-data`)
+
+### Customizing docker-compose.yml
+
+```yaml
+# Change port
+ports:
+  - "11435:11434"  # Host:Container
+
+# Use specific GPU
+environment:
+  - NVIDIA_VISIBLE_DEVICES=0  # Use GPU 0 only
+
+# Enable debug logging
+environment:
+  - OLLAMA_DEBUG=1
+  - GGML_CUDA_DEBUG=1
+```
+
+## GPU Support
+
+### Supported Compute Capabilities
+- **3.7** - Tesla K80 (primary target)
+- **5.0-5.2** - Maxwell (GTX 900 series)
+- **6.0-6.1** - Pascal (GTX 10 series)
+- **7.0-7.5** - Volta, Turing (RTX 20 series)
+- **8.0-8.6** - Ampere (RTX 30 series)
+
+### Tesla K80 Recommendations
+
+**VRAM:** 12GB per GPU (24GB for dual-GPU K80)
+
+**Model sizes:**
+- Small (1-4B): Full precision or Q8 quantization
+- Medium (7-8B): Q4_K_M quantization
+- Large (13B+): Q4_0 quantization or multi-GPU
+
+**Tested models:**
+- ✅ gemma3:4b
+- ✅ gpt-oss
+- ✅ deepseek-r1
+
+**Multi-GPU:**
+```bash
+# Use all GPUs
+docker run --gpus all ...
+
+# Use specific GPU
+docker run --gpus '"device=0"' ...
+
+# Use multiple specific GPUs
+docker run --gpus '"device=0,1"' ...
+```
+
+## Troubleshooting
+
+### GPU not detected
+
+```bash
+# Check GPU visibility in container
+docker exec ollama37 nvidia-smi
+
+# Check CUDA libraries
+docker exec ollama37 ldconfig -p | grep cuda
+
+# Check NVIDIA runtime
+docker info | grep -i runtime
+```
+
+### NVIDIA UVM Device Files Missing
+
+**Symptom:** `nvidia-smi` works inside the container, but Ollama reports **0 GPUs detected** (CUDA runtime cannot find GPUs).
+
+**Root Cause:**
+
+The nvidia-uvm device files were missing on the host system.
+
+While the `nvidia-uvm` kernel module was loaded, the device files `/dev/nvidia-uvm` and `/dev/nvidia-uvm-tools` were not created.
+
+These device files are critical for CUDA runtime:
+- `nvidia-smi` only needs the basic driver (works without UVM)
+- **CUDA applications require UVM** for GPU memory allocation and kernel execution
+- Without UVM devices: CUDA reports 0 GPUs even though they exist
+
+**The Fix:**
+
+Run this single command on the **host system** (not inside the container):
+
+```bash
+nvidia-modprobe -u -c=0
+```
+
+This creates the required device files:
+- `/dev/nvidia-uvm` (major 239, minor 0)
+- `/dev/nvidia-uvm-tools` (major 239, minor 1)
+
+Then restart the container:
+
+```bash
+docker compose restart
+```
+
+**Result:** GPUs now properly detected by CUDA runtime.
+
+**Verify the fix:**
+
+```bash
+# Check UVM device files exist on host
+ls -l /dev/nvidia-uvm*
+
+# Check Ollama logs for GPU detection
+docker compose logs | grep -i gpu
+
+# You should see output like:
+# ollama37  | time=... level=INFO msg="Nvidia GPU detected" name="Tesla K80" vram=11441 MiB
+# ollama37  | time=... level=INFO msg="Nvidia GPU detected" name="Tesla K80" vram=11441 MiB
+```
+
+### Model fails to load
+
+```bash
+# Check logs with CUDA debug
+docker run --rm --runtime=nvidia --gpus all \
+  -e OLLAMA_DEBUG=1 \
+  -e GGML_CUDA_DEBUG=1 \
+  -p 11434:11434 \
+  ollama37:latest
+
+# Check library paths
+docker exec ollama37 bash -c 'echo $LD_LIBRARY_PATH'
+
+# Verify CUBLAS functions
+docker exec ollama37 bash -c 'ldd /usr/local/bin/ollama | grep cublas'
+```
+
+### Build fails with "out of memory"
+
+```bash
+# Edit runtime/Dockerfile line for cmake build
+# Change: cmake --build build -j$(nproc)
+# To: cmake --build build -j2
+
+# Or set Docker memory limit
+docker build --memory=8g ...
+```
+
+### Port already in use
+
+```bash
+# Find process using port 11434
+sudo lsof -i :11434
+
+# Kill the process or change port in docker-compose.yml
+ports:
+  - "11435:11434"
+```
+
+### Build cache issues
+
+```bash
+# Rebuild runtime image without cache
+docker build --no-cache -f runtime/Dockerfile -t ollama37:latest .
+
+# Rebuild builder image without cache
+docker build --no-cache -f builder/Dockerfile -t ollama37-builder:latest builder/
+
+# Remove all images and rebuild
+make clean
+make build
+```
+
+## Rebuilding
+
+### Rebuild with latest code
+
+```bash
+# Runtime Dockerfile clones from GitHub, so rebuild to get latest
+make build-runtime
+
+# Restart container
+docker compose restart
+```
+
+### Rebuild everything from scratch
+
+```bash
+# Stop and remove containers
+docker compose down -v
+
+# Remove images
+make clean
+
+# Rebuild all
+make build
+
+# Start fresh
+docker compose up -d
+```
+
+### Rebuild only builder (rare)
+
+```bash
+# Only needed if you change CUDA/GCC/CMake/Go versions
+make clean
+make build-builder
+make build-runtime
+```
+
+## Development
+
+### Modifying the build
+
+1. **Change build tools** - Edit `builder/Dockerfile`
+2. **Change Ollama build process** - Edit `runtime/Dockerfile`
+3. **Change build orchestration** - Edit `Makefile`
+4. **Change runtime config** - Edit `docker-compose.yml`
+
+### Testing changes
+
+```bash
+# Build with your changes
+make build
+
+# Run and test
+docker compose up -d
+docker compose logs -f
+
+# If issues, check inside container
+docker exec -it ollama37 bash
+```
+
+### Shell access for debugging
+
+```bash
+# Enter running container
+docker exec -it ollama37 bash
+
+# Check GPU
+nvidia-smi
+
+# Check libraries
+ldd /usr/local/bin/ollama
+ldconfig -p | grep -E "cuda|cublas"
+
+# Test binary
+/usr/local/bin/ollama --version
+```
+
+## Image Sizes
+
+| Image | Size | Contents |
+|-------|------|----------|
+| `ollama37-builder:latest` | ~15GB | CUDA, GCC, CMake, Go, build deps |
+| `ollama37:latest` | ~18GB | Builder + Ollama binary + libraries |
+
+**Note**: Large size ensures all runtime dependencies are present and properly linked.
+
+## Build Times
+
+| Task | First Build | Cached Build |
+|------|-------------|--------------|
+| Builder image | ~90 min | <1 min |
+| Runtime image | ~10 min | ~10 min |
+| **Total** | **~100 min** | **~10 min** |
+
+**Breakdown (first build):**
+- GCC 10: ~60 min
+- CMake 4: ~8 min
+- CUDA toolkit: ~10 min
+- Go install: ~1 min
+- Ollama build: ~10 min
+
+## Documentation
+
+- **[../CLAUDE.md](../CLAUDE.md)** - Project goals, implementation details, and technical notes
+- **[Upstream Ollama](https://github.com/ollama/ollama)** - Original Ollama project
+- **[dogkeeper886/ollama37](https://github.com/dogkeeper886/ollama37)** - This fork with K80 support
+
+## License
+
+MIT (same as upstream Ollama)
