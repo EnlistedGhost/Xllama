@@ -81,8 +81,9 @@ CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --preset "CUDA 11 K80"
 # Build the C/C++/CUDA libraries
 CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ cmake --build build -j$(nproc)
 
-# Build the Go binary
-go build -o ollama .
+# Build the Go binary (with version)
+OLLAMA_VERSION="2.0.1"
+go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o ollama .
 ```
 
 ## Running Ollama
