@@ -14,16 +14,18 @@ steps:
   - name: Check CUDA libraries
     command: docker exec ollama37 ldconfig -p | grep -i cuda | head -5
 
-  - name: Check UVM device files (create if missing)
+  - name: Verify UVM device files
     command: |
       if [ ! -e /dev/nvidia-uvm ]; then
-        echo "UVM device missing, creating with nvidia-modprobe..."
+        echo "WARNING: UVM device missing, creating with nvidia-modprobe..."
         sudo nvidia-modprobe -u -c=0
         echo "Restarting container to pick up UVM devices..."
         cd docker && docker compose restart
         sleep 15
+        echo "UVM device fix applied"
       else
-        echo "UVM device exists: $(ls -l /dev/nvidia-uvm)"
+        echo "SUCCESS: UVM device file present"
+        ls -l /dev/nvidia-uvm
       fi
 
   - name: Check Ollama GPU detection in logs
