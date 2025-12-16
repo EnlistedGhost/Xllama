@@ -58,31 +58,6 @@ steps:
         echo "WARNING: Compute capability 3.7 not detected"
       fi
 
-  - name: Verify CUDA initialization in logs
-    command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
-
-      echo "=== CUDA Initialization Check ==="
-
-      # Check ggml_cuda_init
-      if echo "$LOGS" | grep -q "ggml_cuda_init: found"; then
-        echo "SUCCESS: CUDA initialized"
-        echo "$LOGS" | grep "ggml_cuda_init: found" | head -1
-      else
-        echo "ERROR: CUDA not initialized"
-        exit 1
-      fi
-
-      # Check CUDA backend loaded
-      if echo "$LOGS" | grep -q "load_backend: loaded CUDA backend"; then
-        echo "SUCCESS: CUDA backend loaded"
-        echo "$LOGS" | grep "load_backend: loaded CUDA backend" | head -1
-      else
-        echo "ERROR: CUDA backend not loaded"
-        exit 1
-      fi
-
   - name: Check for GPU-related errors in logs
     command: |
       cd docker
@@ -121,11 +96,12 @@ criteria: |
   - CUDA libraries are available (libcuda, libcublas, etc.)
   - /dev/nvidia-uvm device file exists (required for CUDA runtime)
   - Ollama logs show "inference compute" with "library=CUDA"
-  - Ollama logs show "ggml_cuda_init: found N CUDA devices"
-  - Ollama logs show "load_backend: loaded CUDA backend"
   - NO "id=cpu library=cpu" (CPU fallback)
   - NO CUBLAS_STATUS_ errors
   - NO CUDA error messages
+
+  NOTE: "ggml_cuda_init" and "load_backend" only appear when a model is loaded,
+  so they are checked in inference tests, not here.
 
   NOTE: If nvidia-smi works but Ollama shows only CPU, the UVM device
   files are missing. The test will auto-fix with nvidia-modprobe -u -c=0.

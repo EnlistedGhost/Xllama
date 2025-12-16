@@ -52,8 +52,8 @@ steps:
       echo "=== Runtime Error Check ==="
 
       # Check for any ERROR level logs
-      ERROR_COUNT=$(echo "$LOGS" | grep -c "level=ERROR" || echo "0")
-      if [ "$ERROR_COUNT" -gt 0 ]; then
+      ERROR_COUNT=$(echo "$LOGS" | grep -c "level=ERROR" || true)
+      if [ -n "$ERROR_COUNT" ] && [ "$ERROR_COUNT" -gt 0 ] 2>/dev/null; then
         echo "WARNING: Found $ERROR_COUNT ERROR level log entries:"
         echo "$LOGS" | grep "level=ERROR" | tail -5
       else
