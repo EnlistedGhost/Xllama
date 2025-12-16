@@ -38,6 +38,9 @@ jobs:
   build:
     name: Build Verification
     runs-on: self-hosted
+    environment: cicd-1
+    env:
+      OLLAMA_VERSION: ${{ vars.OLLAMA_VERSION || '0.0.0' }}
     outputs:
       result: ${{ steps.build-tests.outcome }}
 

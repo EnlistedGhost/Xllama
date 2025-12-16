@@ -22,12 +22,17 @@
 #   docker-compose logs -f
 #   docker-compose down
 
+# Load .env file if it exists (for local development)
+-include .env
+
 # Configuration
 BUILDER_IMAGE := ollama37-builder
 BUILDER_TAG := latest
 RUNTIME_IMAGE := ollama37
 RUNTIME_TAG := latest
 SOURCE_DIR := $(shell cd .. && pwd)
+# Version: environment variable > .env file > fallback 0.0.0
+OLLAMA_VERSION ?= 0.0.0
 BUILDER_DOCKERFILE := $(SOURCE_DIR)/docker/builder/Dockerfile
 RUNTIME_DOCKERFILE := $(SOURCE_DIR)/docker/runtime/Dockerfile
 
@@ -87,6 +92,7 @@ build-runtime: ensure-builder
 	@echo "    - Package runtime environment"
 	@echo ""
 	@docker build \
+		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
 		-f $(RUNTIME_DOCKERFILE) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
@@ -102,15 +108,17 @@ build-runtime-no-cache: ensure-builder
 	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
 	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE)"
 	@echo "  Source: GitHub (fresh clone, no cache)"
+	@echo "  Version: $(OLLAMA_VERSION)"
 	@echo ""
 	@echo "  This will:"
 	@echo "    - Force fresh clone from GitHub"
 	@echo "    - Rebuild all layers without cache"
 	@echo "    - Configure with CMake (CUDA 11 preset)"
 	@echo "    - Compile C/C++/CUDA libraries"
-	@echo "    - Build Go binary"
+	@echo "    - Build Go binary with version $(OLLAMA_VERSION)"
 	@echo ""
 	@docker build --no-cache \
+		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
 		-f $(RUNTIME_DOCKERFILE) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
@@ -126,15 +134,17 @@ build-runtime-local: ensure-builder
 	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
 	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE_LOCAL)"
 	@echo "  Source: Local directory (uses cache)"
+	@echo "  Version: $(OLLAMA_VERSION)"
 	@echo ""
 	@echo "  This will:"
 	@echo "    - Copy local source code to container"
 	@echo "    - Configure with CMake (CUDA 11 preset)"
 	@echo "    - Compile C/C++/CUDA libraries"
-	@echo "    - Build Go binary"
+	@echo "    - Build Go binary with version $(OLLAMA_VERSION)"
 	@echo "    - Package runtime environment"
 	@echo ""
 	@docker build \
+		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
 		-f $(RUNTIME_DOCKERFILE_LOCAL) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
@@ -150,15 +160,17 @@ build-runtime-local-no-cache: ensure-builder
 	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
 	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE_LOCAL)"
 	@echo "  Source: Local directory (no cache)"
+	@echo "  Version: $(OLLAMA_VERSION)"
 	@echo ""
 	@echo "  This will:"
 	@echo "    - Copy local source code to container"
 	@echo "    - Rebuild all layers without cache"
 	@echo "    - Configure with CMake (CUDA 11 preset)"
 	@echo "    - Compile C/C++/CUDA libraries"
-	@echo "    - Build Go binary"
+	@echo "    - Build Go binary with version $(OLLAMA_VERSION)"
 	@echo ""
 	@docker build --no-cache \
+		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
 		-f $(RUNTIME_DOCKERFILE_LOCAL) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
