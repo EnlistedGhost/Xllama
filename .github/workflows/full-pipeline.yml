@@ -3,10 +3,24 @@ name: Full Pipeline
 on:
   workflow_dispatch:  # Manual trigger
     inputs:
-      skip_llm_judge:
-        description: 'Skip LLM judge evaluation'
+      judge_mode:
+        description: 'Test judge mode'
         required: false
-        default: 'false'
+        default: 'simple'
+        type: choice
+        options:
+          - 'simple'
+          - 'llm'
+          - 'dual'
+      judge_model:
+        description: 'LLM model for judging (if llm/dual mode)'
+        required: false
+        default: 'gemma3:4b'
+        type: string
+      skip_llm_judge_stage:
+        description: 'Skip separate LLM judge evaluation stage'
+        required: false
+        default: 'true'
         type: choice
         options:
           - 'true'
@@ -19,6 +33,9 @@ jobs:
   build:
     name: Build Verification
     uses: ./.github/workflows/build.yml
+    with:
+      judge_mode: ${{ inputs.judge_mode || 'simple' }}
+      judge_model: ${{ inputs.judge_model || 'gemma3:4b' }}
 
   start-container:
     name: Start Container
@@ -62,7 +79,22 @@ jobs:
         id: runtime-tests
         run: |
           cd tests
-          npm run --silent dev -- run --suite runtime --no-llm --output json > /tmp/runtime-results.json || true
+
+          # Build judge flags based on input
+          JUDGE_FLAGS=""
+          if [ "${{ inputs.judge_mode }}" = "simple" ] || [ -z "${{ inputs.judge_mode }}" ]; then
+            JUDGE_FLAGS="--no-llm"
+          elif [ "${{ inputs.judge_mode }}" = "dual" ]; then
+            JUDGE_FLAGS="--dual-judge --judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          else
+            # llm mode
+            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          fi
+
+          echo "Judge mode: ${{ inputs.judge_mode || 'simple' }}"
+          echo "Judge flags: $JUDGE_FLAGS"
+
+          npm run --silent dev -- run --suite runtime $JUDGE_FLAGS --output json > /tmp/runtime-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/runtime-results.json
@@ -104,7 +136,22 @@ jobs:
         id: inference-tests
         run: |
           cd tests
-          npm run --silent dev -- run --suite inference --no-llm --output json > /tmp/inference-results.json || true
+
+          # Build judge flags based on input
+          JUDGE_FLAGS=""
+          if [ "${{ inputs.judge_mode }}" = "simple" ] || [ -z "${{ inputs.judge_mode }}" ]; then
+            JUDGE_FLAGS="--no-llm"
+          elif [ "${{ inputs.judge_mode }}" = "dual" ]; then
+            JUDGE_FLAGS="--dual-judge --judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          else
+            # llm mode
+            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          fi
+
+          echo "Judge mode: ${{ inputs.judge_mode || 'simple' }}"
+          echo "Judge flags: $JUDGE_FLAGS"
+
+          npm run --silent dev -- run --suite inference $JUDGE_FLAGS --output json > /tmp/inference-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/inference-results.json
@@ -129,7 +176,7 @@ jobs:
     name: LLM Judge Evaluation
     runs-on: self-hosted
     needs: [build, runtime, inference]
-    if: ${{ inputs.skip_llm_judge != 'true' }}
+    if: ${{ inputs.skip_llm_judge_stage != 'true' }}
 
     steps:
       - name: Checkout
@@ -152,7 +199,9 @@ jobs:
         run: |
           cd tests
           echo "Running LLM judge evaluation..."
-          npm run --silent dev -- run --output json > /tmp/llm-judged-results.json || true
+          echo "Using model: ${{ inputs.judge_model || 'gemma3:4b' }}"
+
+          npm run --silent dev -- run --judge-model ${{ inputs.judge_model || 'gemma3:4b' }} --output json > /tmp/llm-judged-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/llm-judged-results.json

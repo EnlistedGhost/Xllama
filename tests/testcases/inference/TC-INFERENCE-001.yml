@@ -25,6 +25,84 @@ steps:
         | jq -r '.response' | head -c 100
     timeout: 300000
 
+  - name: Verify model loading in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== Model Loading Check ==="
+
+      # Check for model loading message
+      if echo "$LOGS" | grep -q 'msg="loading model"'; then
+        echo "SUCCESS: Model loading initiated"
+        echo "$LOGS" | grep 'msg="loading model"' | tail -1
+      else
+        echo "WARNING: Model loading message not found"
+      fi
+
+      # Check for layer offloading to GPU
+      if echo "$LOGS" | grep -q "offloaded.*layers to GPU"; then
+        echo "SUCCESS: Model layers offloaded to GPU"
+        echo "$LOGS" | grep "offloaded.*layers to GPU" | tail -1
+      else
+        echo "ERROR: Model layers not offloaded to GPU"
+        exit 1
+      fi
+
+      # Check model weights loaded
+      if echo "$LOGS" | grep -q 'msg="model weights loaded successfully"'; then
+        echo "SUCCESS: Model weights loaded"
+      else
+        echo "WARNING: Model weights loaded message not found"
+      fi
+
+  - name: Verify llama runner started
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== Llama Runner Check ==="
+
+      # Check llama runner started
+      if echo "$LOGS" | grep -q "llama runner started"; then
+        echo "SUCCESS: Llama runner started"
+        echo "$LOGS" | grep "llama runner started" | tail -1
+      else
+        echo "ERROR: Llama runner not started"
+        exit 1
+      fi
+
+  - name: Check for model loading errors
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== Model Loading Error Check ==="
+
+      # Check for CUDA/CUBLAS errors during model load
+      if echo "$LOGS" | grep -qE "(CUBLAS_STATUS_|CUDA error|cudaMalloc failed)"; then
+        echo "CRITICAL CUDA ERRORS during model load:"
+        echo "$LOGS" | grep -E "(CUBLAS_STATUS_|CUDA error|cudaMalloc failed)"
+        exit 1
+      fi
+
+      # Check for out of memory
+      if echo "$LOGS" | grep -qi "out of memory"; then
+        echo "ERROR: Out of memory during model load"
+        echo "$LOGS" | grep -i "out of memory"
+        exit 1
+      fi
+
+      echo "SUCCESS: No model loading errors"
+
+  - name: Display model memory allocation from logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== Model Memory Allocation ==="
+      echo "$LOGS" | grep -E '(model weights|kv cache|compute graph|total memory).*device=' | tail -8
+
 criteria: |
   The gemma3:4b model should be available for inference.
 
@@ -32,8 +110,11 @@ criteria: |
   - Model is either already present or successfully downloaded
   - "ollama list" shows gemma3:4b in the output
   - No download errors
-  - Warmup step loads model into GPU memory (may take up to 3 minutes on Tesla K80)
-  - Warmup returns a response from the model
+  - Logs show "offloaded X/Y layers to GPU"
+  - Logs show "llama runner started"
+  - Logs show model weights on CUDA device (not CPU only)
+  - NO CUBLAS_STATUS_ errors during model load
+  - NO out of memory errors
 
   Accept if model already exists (skip download).
   Model size is ~3GB, download may take time.

@@ -20,6 +20,65 @@ steps:
         -d '{"model":"gemma3:4b","prompt":"Count from 1 to 3","stream":true}' \
         | head -5
 
+  - name: Verify API requests logged successfully
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=5m 2>&1)
+
+      echo "=== API Request Log Verification ==="
+
+      # Check for generate requests with 200 status
+      GENERATE_200=$(echo "$LOGS" | grep -c '\[GIN\].*200.*POST.*/api/generate' || echo "0")
+      echo "Generate requests with 200 status: $GENERATE_200"
+
+      if [ "$GENERATE_200" -gt 0 ]; then
+        echo "SUCCESS: API generate requests completed successfully"
+        echo "$LOGS" | grep '\[GIN\].*POST.*/api/generate' | tail -3
+      else
+        echo "WARNING: No successful generate requests found in recent logs"
+      fi
+
+  - name: Check for API errors in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=5m 2>&1)
+
+      echo "=== API Error Check ==="
+
+      # Check for 4xx/5xx errors on generate endpoint
+      if echo "$LOGS" | grep -qE '\[GIN\].*(4[0-9]{2}|5[0-9]{2}).*POST.*/api/generate'; then
+        echo "WARNING: API errors found on generate endpoint:"
+        echo "$LOGS" | grep -E '\[GIN\].*(4[0-9]{2}|5[0-9]{2}).*POST.*/api/generate' | tail -3
+      else
+        echo "SUCCESS: No API errors on generate endpoint"
+      fi
+
+      # Check for any CUDA errors during API processing
+      if echo "$LOGS" | grep -qE "(CUBLAS_STATUS_|CUDA error)"; then
+        echo "CRITICAL: CUDA errors during API processing:"
+        echo "$LOGS" | grep -E "(CUBLAS_STATUS_|CUDA error)"
+        exit 1
+      fi
+
+      echo "SUCCESS: No critical errors during API processing"
+
+  - name: Display API response times from logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=5m 2>&1)
+
+      echo "=== API Response Times ==="
+
+      # Show recent generate request response times
+      echo "$LOGS" | grep -E '\[GIN\].*POST.*/api/generate' | tail -5 | while read line; do
+        # Extract response time from GIN log format
+        echo "$line" | grep -oE '[0-9]+(\.[0-9]+)?(ms|s|m)' | head -1
+      done
+
+      echo ""
+      echo "Recent API requests:"
+      echo "$LOGS" | grep '\[GIN\]' | tail -5
+
 criteria: |
   Ollama REST API should handle inference requests.
 
@@ -30,5 +89,10 @@ criteria: |
   Expected for streaming:
   - Returns multiple JSON lines
   - Each line contains partial response
+
+  Log verification:
+  - Generate API requests logged with 200 status
+  - NO 4xx/5xx errors on generate endpoint
+  - NO CUDA/CUBLAS errors during API processing
 
   Accept any valid JSON response. Content may vary.

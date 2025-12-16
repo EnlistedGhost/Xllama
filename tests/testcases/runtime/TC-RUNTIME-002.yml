@@ -28,9 +28,90 @@ steps:
         ls -l /dev/nvidia-uvm
       fi
 
-  - name: Check Ollama GPU detection in logs
+  - name: Verify GPU detection in Ollama logs
     command: |
-      cd docker && docker compose logs 2>&1 | grep -E "(inference compute|GPU detected)" | tail -5
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== GPU Detection Check ==="
+
+      # Check for inference compute with CUDA library
+      if echo "$LOGS" | grep -q "inference compute.*library=CUDA"; then
+        echo "SUCCESS: GPU detected with CUDA library"
+        echo "$LOGS" | grep "inference compute" | head -2
+      else
+        echo "ERROR: GPU not detected with CUDA library"
+        exit 1
+      fi
+
+      # Check for Tesla K80 specifically
+      if echo "$LOGS" | grep -q 'description="Tesla K80"'; then
+        echo "SUCCESS: Tesla K80 GPU identified"
+      else
+        echo "WARNING: Tesla K80 not explicitly identified"
+      fi
+
+      # Check compute capability 3.7
+      if echo "$LOGS" | grep -q "compute=3.7"; then
+        echo "SUCCESS: Compute capability 3.7 detected"
+      else
+        echo "WARNING: Compute capability 3.7 not detected"
+      fi
+
+  - name: Verify CUDA initialization in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== CUDA Initialization Check ==="
+
+      # Check ggml_cuda_init
+      if echo "$LOGS" | grep -q "ggml_cuda_init: found"; then
+        echo "SUCCESS: CUDA initialized"
+        echo "$LOGS" | grep "ggml_cuda_init: found" | head -1
+      else
+        echo "ERROR: CUDA not initialized"
+        exit 1
+      fi
+
+      # Check CUDA backend loaded
+      if echo "$LOGS" | grep -q "load_backend: loaded CUDA backend"; then
+        echo "SUCCESS: CUDA backend loaded"
+        echo "$LOGS" | grep "load_backend: loaded CUDA backend" | head -1
+      else
+        echo "ERROR: CUDA backend not loaded"
+        exit 1
+      fi
+
+  - name: Check for GPU-related errors in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== GPU Error Check ==="
+
+      # Check for critical CUDA/CUBLAS errors
+      if echo "$LOGS" | grep -qE "(CUBLAS_STATUS_|CUDA error|cudaMalloc failed|out of memory)"; then
+        echo "CRITICAL GPU ERRORS FOUND:"
+        echo "$LOGS" | grep -E "(CUBLAS_STATUS_|CUDA error|cudaMalloc failed|out of memory)"
+        exit 1
+      fi
+
+      # Check for CPU fallback (bad!)
+      if echo "$LOGS" | grep -q "id=cpu library=cpu"; then
+        echo "ERROR: Ollama fell back to CPU-only mode"
+        exit 1
+      fi
+
+      echo "SUCCESS: No GPU-related errors found"
+
+  - name: Display GPU memory status from logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== GPU Memory Status ==="
+      echo "$LOGS" | grep -E "gpu memory.*library=CUDA" | tail -4
 
 criteria: |
   Tesla K80 GPU should be detected by both nvidia-smi AND Ollama CUDA runtime.
@@ -39,7 +120,12 @@ criteria: |
   - nvidia-smi shows Tesla K80 GPU(s) with Driver 470.x
   - CUDA libraries are available (libcuda, libcublas, etc.)
   - /dev/nvidia-uvm device file exists (required for CUDA runtime)
-  - Ollama logs show GPU detection, NOT "id=cpu library=cpu"
+  - Ollama logs show "inference compute" with "library=CUDA"
+  - Ollama logs show "ggml_cuda_init: found N CUDA devices"
+  - Ollama logs show "load_backend: loaded CUDA backend"
+  - NO "id=cpu library=cpu" (CPU fallback)
+  - NO CUBLAS_STATUS_ errors
+  - NO CUDA error messages
 
   NOTE: If nvidia-smi works but Ollama shows only CPU, the UVM device
   files are missing. The test will auto-fix with nvidia-modprobe -u -c=0.

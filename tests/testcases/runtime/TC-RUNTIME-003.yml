@@ -28,6 +28,62 @@ steps:
   - name: Check Ollama version
     command: docker exec ollama37 ollama --version
 
+  - name: Verify server listening in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== Server Status Check ==="
+
+      # Check server is listening
+      if echo "$LOGS" | grep -q "Listening on"; then
+        echo "SUCCESS: Server is listening"
+        echo "$LOGS" | grep "Listening on" | head -1
+      else
+        echo "ERROR: Server not listening"
+        exit 1
+      fi
+
+  - name: Check for runtime errors in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== Runtime Error Check ==="
+
+      # Check for any ERROR level logs
+      ERROR_COUNT=$(echo "$LOGS" | grep -c "level=ERROR" || echo "0")
+      if [ "$ERROR_COUNT" -gt 0 ]; then
+        echo "WARNING: Found $ERROR_COUNT ERROR level log entries:"
+        echo "$LOGS" | grep "level=ERROR" | tail -5
+      else
+        echo "SUCCESS: No ERROR level logs found"
+      fi
+
+      # Check for panic/fatal
+      if echo "$LOGS" | grep -qiE "(panic|fatal)"; then
+        echo "CRITICAL: Panic or fatal error detected:"
+        echo "$LOGS" | grep -iE "(panic|fatal)"
+        exit 1
+      fi
+
+      echo "SUCCESS: No critical runtime errors"
+
+  - name: Verify API request handling in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      echo "=== API Request Logs ==="
+
+      # Check that API requests are being logged (GIN framework)
+      if echo "$LOGS" | grep -q '\[GIN\].*200.*GET.*"/api/tags"'; then
+        echo "SUCCESS: API requests are being handled"
+        echo "$LOGS" | grep '\[GIN\].*"/api/tags"' | tail -3
+      else
+        echo "WARNING: No API request logs found (might be first request)"
+      fi
+
 criteria: |
   Ollama server should be healthy and API responsive.
 
@@ -35,5 +91,8 @@ criteria: |
   - Container health status becomes "healthy"
   - /api/tags endpoint returns JSON response (even if empty models)
   - ollama --version shows version information
+  - Logs show "Listening on" message
+  - No panic or fatal errors in logs
+  - API requests logged with 200 status codes
 
   Accept any valid JSON response from API. Version format may vary.

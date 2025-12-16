@@ -2,7 +2,33 @@ name: Build Verification
 
 on:
   workflow_dispatch:  # Manual trigger
+    inputs:
+      judge_mode:
+        description: 'Test judge mode'
+        required: false
+        default: 'simple'
+        type: choice
+        options:
+          - 'simple'
+          - 'llm'
+          - 'dual'
+      judge_model:
+        description: 'LLM model for judging (if llm/dual mode)'
+        required: false
+        default: 'gemma3:4b'
+        type: string
   workflow_call:      # Called by other workflows
+    inputs:
+      judge_mode:
+        description: 'Test judge mode (simple, llm, dual)'
+        required: false
+        default: 'simple'
+        type: string
+      judge_model:
+        description: 'LLM model for judging'
+        required: false
+        default: 'gemma3:4b'
+        type: string
     outputs:
       result:
         description: "Build test result"
@@ -31,8 +57,23 @@ jobs:
         id: build-tests
         run: |
           cd tests
+
+          # Build judge flags based on input
+          JUDGE_FLAGS=""
+          if [ "${{ inputs.judge_mode }}" = "simple" ] || [ -z "${{ inputs.judge_mode }}" ]; then
+            JUDGE_FLAGS="--no-llm"
+          elif [ "${{ inputs.judge_mode }}" = "dual" ]; then
+            JUDGE_FLAGS="--dual-judge --judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          else
+            # llm mode
+            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          fi
+
+          echo "Judge mode: ${{ inputs.judge_mode || 'simple' }}"
+          echo "Judge flags: $JUDGE_FLAGS"
+
           # Progress goes to stderr (visible), JSON results go to file
-          npm run --silent dev -- run --suite build --no-llm --output json > /tmp/build-results.json || true
+          npm run --silent dev -- run --suite build $JUDGE_FLAGS --output json > /tmp/build-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/build-results.json

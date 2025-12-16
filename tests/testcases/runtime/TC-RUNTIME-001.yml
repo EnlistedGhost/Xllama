@@ -20,6 +20,30 @@ steps:
   - name: Check container status
     command: cd docker && docker compose ps
 
+  - name: Capture startup logs
+    command: |
+      cd docker && docker compose logs 2>&1 | head -100
+
+  - name: Check for startup errors in logs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs 2>&1)
+
+      # Check for critical errors
+      if echo "$LOGS" | grep -qE "(level=ERROR|CUBLAS_STATUS_|CUDA error|cudaMalloc failed)"; then
+        echo "CRITICAL ERRORS FOUND IN STARTUP LOGS:"
+        echo "$LOGS" | grep -E "(level=ERROR|CUBLAS_STATUS_|CUDA error|cudaMalloc failed)"
+        exit 1
+      fi
+
+      # Check for CPU-only fallback (GPU not detected)
+      if echo "$LOGS" | grep -q "id=cpu library=cpu"; then
+        echo "ERROR: Ollama fell back to CPU-only mode"
+        exit 1
+      fi
+
+      echo "SUCCESS: No critical errors in startup logs"
+
 criteria: |
   The ollama37 container should start successfully with GPU access.
 
@@ -27,5 +51,7 @@ criteria: |
   - Container starts without errors
   - docker compose ps shows container in "Up" state
   - No "Exited" or "Restarting" status
+  - No critical errors in logs (level=ERROR, CUBLAS_STATUS_, CUDA error)
+  - No CPU-only fallback (id=cpu library=cpu)
 
-  Accept startup warnings. Container should be running.
+  Accept startup warnings (flash attention not supported is OK). Container should be running.
