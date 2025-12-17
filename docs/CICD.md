@@ -54,7 +54,76 @@ A critical problem with container log analysis is temporal precision. Using `doc
 - Long-running tests may exceed the time window
 - Fast tests include irrelevant historical logs
 
-The LogCollector solves this by running `docker compose logs --follow` as a background process throughout test execution. It maintains markers for each test's start and end, then extracts precisely the logs generated during that specific test. Each test step receives only its own logs for analysis.
+The LogCollector solves this using a file-based architecture with embedded text markers.
+
+#### Architecture
+
+```
+docker compose logs --follow --timestamps
+         │
+         ▼
+/tmp/ollama37-session-{timestamp}.log  (persistent file)
+         │
+===MARKER:START:TC-001:2024-01-15T10:30:05Z===
+[container logs during test]
+===MARKER:END:TC-001:2024-01-15T10:30:15Z===
+         │
+         ▼ sed extraction
+/tmp/test-TC-001-logs.txt  (test-specific logs)
+```
+
+#### Session File Format
+
+The session file contains all docker logs with embedded markers:
+
+```
+===SESSION:START:2024-01-15T10:30:00.000Z===
+ollama37  | 2024-01-15T10:30:01Z msg="starting server"
+===MARKER:START:TC-RUNTIME-001:2024-01-15T10:30:05.123Z===
+ollama37  | 2024-01-15T10:30:06Z msg="inference compute" library=CUDA
+ollama37  | 2024-01-15T10:30:07Z msg="loaded model" layers=28
+===MARKER:END:TC-RUNTIME-001:2024-01-15T10:30:15.789Z===
+===MARKER:START:TC-RUNTIME-002:2024-01-15T10:30:16.000Z===
+[more logs...]
+===MARKER:END:TC-RUNTIME-002:2024-01-15T10:30:45.000Z===
+===SESSION:END:2024-01-15T10:31:00.000Z===
+```
+
+**Marker Format**: `===MARKER:{TYPE}:{TEST_ID}:{ISO_TIMESTAMP}===`
+- TYPE: `START`, `END`, or `SESSION`
+- TEST_ID: Test case identifier (e.g., `TC-RUNTIME-001`)
+- ISO_TIMESTAMP: When the marker was written
+
+#### Log Extraction
+
+Test-specific logs are extracted using sed:
+
+```bash
+# Extract logs for TC-RUNTIME-001 (excluding marker lines)
+sed -n '/===MARKER:START:TC-RUNTIME-001:/,/===MARKER:END:TC-RUNTIME-001:/{/===MARKER:/d;p}' \
+  /tmp/ollama37-session-*.log
+```
+
+For tests still running (no END marker yet), extraction continues to EOF:
+
+```bash
+sed -n '/===MARKER:START:TC-RUNTIME-001:/,${/===MARKER:/d;p}' /tmp/ollama37-session-*.log
+```
+
+#### Design Benefits
+
+1. **Crash Resilience**: The session file persists at `/tmp/ollama37-session-{timestamp}.log` even if the test process crashes. This enables post-mortem log analysis.
+
+2. **Bounded Memory**: No in-memory array growth. All logs are written directly to disk.
+
+3. **Precise Boundaries**: Text markers provide exact test boundaries regardless of docker log buffering delays.
+
+4. **Race Condition Prevention**: All writes (both docker log data and markers) go through a serialized write queue with line buffering, ensuring markers never interleave with log lines.
+
+#### Cleanup
+
+- Old session files (> 24 hours) are automatically cleaned up at LogCollector startup
+- Stale test log files are removed when a new test with the same ID starts
 
 ### Test Execution Flow
 
