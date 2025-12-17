@@ -98,8 +98,9 @@ Respond ONLY with the JSON array, no other text.`;
     // Process in batches
     for (let i = 0; i < results.length; i += this.batchSize) {
       const batch = results.slice(i, i + this.batchSize);
-      console.log(
-        `  Judging batch ${Math.floor(i / this.batchSize) + 1}/${Math.ceil(results.length / this.batchSize)}...`,
+      // Write progress to stderr to avoid contaminating JSON output on stdout
+      process.stderr.write(
+        `  Judging batch ${Math.floor(i / this.batchSize) + 1}/${Math.ceil(results.length / this.batchSize)}...\n`,
       );
 
       try {
