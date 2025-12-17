@@ -8,13 +8,6 @@ dependencies:
   - TC-INFERENCE-003
 
 steps:
-  - name: Unload previous model from VRAM
-    command: |
-      echo "Unloading any loaded models..."
-      curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","keep_alive":0}' || true
-      sleep 2
-      echo "Previous model unloaded"
-
   - name: Check if gemma3:12b model exists
     command: docker exec ollama37 ollama list | grep -q "gemma3:12b" && echo "Model exists" || echo "Model not found"
 

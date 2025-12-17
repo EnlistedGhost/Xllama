@@ -79,6 +79,13 @@ steps:
       echo "Recent API requests:"
       echo "$LOGS" | grep '\[GIN\]' | tail -5
 
+  - name: Unload model after 4b tests complete
+    command: |
+      echo "Unloading gemma3:4b from VRAM..."
+      curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","keep_alive":0}' || true
+      sleep 2
+      echo "Model unloaded"
+
 criteria: |
   Ollama REST API should handle inference requests.
 
