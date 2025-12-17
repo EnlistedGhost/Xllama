@@ -169,6 +169,11 @@ program
       }
     }
 
+    // Unload judge model from VRAM if LLM was used
+    if (options.llm !== false) {
+      await judge.unloadModel();
+    }
+
     // Create reports (with separate verdicts in dual-judge mode)
     const reports = Reporter.createReports(
       results,

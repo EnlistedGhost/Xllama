@@ -175,6 +175,30 @@ Respond ONLY with the JSON array, no other text.`;
     }
   }
 
+  // Unload the judge model from VRAM to free memory for other tests
+  async unloadModel(): Promise<void> {
+    try {
+      process.stderr.write(
+        `  Unloading judge model ${this.model} from VRAM...\n`,
+      );
+      await axios.post(
+        `${this.ollamaUrl}/api/generate`,
+        {
+          model: this.model,
+          keep_alive: 0,
+        },
+        {
+          timeout: 30000,
+        },
+      );
+      process.stderr.write(`  Judge model unloaded.\n`);
+    } catch (error) {
+      process.stderr.write(
+        `  Warning: Failed to unload judge model: ${error}\n`,
+      );
+    }
+  }
+
   // Fallback: Simple rule-based judgment (no LLM)
   simpleJudge(result: TestResult): Judgment {
     const allStepsPassed = result.steps.every((s) => s.exitCode === 0);
