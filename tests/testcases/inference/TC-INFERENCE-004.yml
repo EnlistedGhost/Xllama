@@ -1,0 +1,120 @@
+id: TC-INFERENCE-004
+name: Medium Model (12b) Inference
+suite: inference
+priority: 4
+timeout: 600000
+
+dependencies:
+  - TC-INFERENCE-003
+
+steps:
+  - name: Unload previous model from VRAM
+    command: |
+      echo "Unloading any loaded models..."
+      curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","keep_alive":0}' || true
+      sleep 2
+      echo "Previous model unloaded"
+
+  - name: Check if gemma3:12b model exists
+    command: docker exec ollama37 ollama list | grep -q "gemma3:12b" && echo "Model exists" || echo "Model not found"
+
+  - name: Pull gemma3:12b model if needed
+    command: docker exec ollama37 ollama list | grep -q "gemma3:12b" || docker exec ollama37 ollama pull gemma3:12b
+    timeout: 900000
+
+  - name: Verify model available
+    command: docker exec ollama37 ollama list | grep gemma3:12b
+
+  - name: Warmup model (preload into GPU)
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:12b","prompt":"hi","stream":false}' \
+        | jq -r '.response' | head -c 100
+    timeout: 300000
+
+  - name: Verify model loaded to GPU
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=5m 2>&1)
+
+      echo "=== Model Loading Check for gemma3:12b ==="
+
+      # Check for layer offloading to GPU
+      if echo "$LOGS" | grep -q "offloaded.*layers to GPU"; then
+        echo "SUCCESS: Model layers offloaded to GPU"
+        echo "$LOGS" | grep "offloaded.*layers to GPU" | tail -1
+      else
+        echo "ERROR: Model layers not offloaded to GPU"
+        exit 1
+      fi
+
+      # Check llama runner started
+      if echo "$LOGS" | grep -q "llama runner started"; then
+        echo "SUCCESS: Llama runner started"
+      else
+        echo "ERROR: Llama runner not started"
+        exit 1
+      fi
+
+  - name: Run inference test
+    command: docker exec ollama37 ollama run gemma3:12b "What is the capital of France? Answer in one word." 2>&1
+    timeout: 180000
+
+  - name: Check GPU memory usage
+    command: |
+      echo "=== GPU Memory Usage ==="
+      docker exec ollama37 nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv
+      echo ""
+      echo "=== GPU Processes ==="
+      docker exec ollama37 nvidia-smi --query-compute-apps=pid,used_memory --format=csv 2>/dev/null || echo "No GPU processes listed"
+
+  - name: Check for inference errors
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=5m 2>&1)
+
+      echo "=== Inference Error Check ==="
+
+      if echo "$LOGS" | grep -qE "CUBLAS_STATUS_"; then
+        echo "CRITICAL: CUBLAS error during inference:"
+        echo "$LOGS" | grep -E "CUBLAS_STATUS_"
+        exit 1
+      fi
+
+      if echo "$LOGS" | grep -qE "CUDA error"; then
+        echo "CRITICAL: CUDA error during inference:"
+        echo "$LOGS" | grep -E "CUDA error"
+        exit 1
+      fi
+
+      if echo "$LOGS" | grep -qi "out of memory"; then
+        echo "ERROR: Out of memory"
+        echo "$LOGS" | grep -i "out of memory"
+        exit 1
+      fi
+
+      echo "SUCCESS: No inference errors"
+
+  - name: Unload model after test
+    command: |
+      echo "Unloading gemma3:12b from VRAM..."
+      curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:12b","keep_alive":0}' || true
+      sleep 2
+      echo "Model unloaded"
+
+criteria: |
+  The gemma3:12b model should run inference on Tesla K80.
+
+  Expected:
+  - Model downloads successfully (~8GB)
+  - Model loads into GPU (single GPU should be sufficient)
+  - Logs show "offloaded X/Y layers to GPU"
+  - Logs show "llama runner started"
+  - Inference returns a response mentioning "Paris"
+  - NO CUBLAS_STATUS_ errors
+  - NO CUDA errors
+  - NO out of memory errors
+  - GPU memory shows allocation (~10GB)
+
+  This is a medium-sized model that should fit in a single K80 GPU.
+  Accept any reasonable answer about France's capital.

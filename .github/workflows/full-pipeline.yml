@@ -165,12 +165,14 @@ jobs:
             exit 1
           fi
 
-      - name: Unload test model from VRAM
+      - name: Unload test models from VRAM
         if: always()
         run: |
-          echo "Unloading gemma3:4b from VRAM..."
+          echo "Unloading all test models from VRAM..."
           curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","keep_alive":0}' || true
-          echo "Model unloaded"
+          curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:12b","keep_alive":0}' || true
+          curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:27b","keep_alive":0}' || true
+          echo "All models unloaded"
 
       - name: Upload inference results
         uses: actions/upload-artifact@v4

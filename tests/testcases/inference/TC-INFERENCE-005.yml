@@ -1,0 +1,160 @@
+id: TC-INFERENCE-005
+name: Large Model (27b) Dual-GPU Inference
+suite: inference
+priority: 5
+timeout: 900000
+
+dependencies:
+  - TC-INFERENCE-004
+
+steps:
+  - name: Unload previous model from VRAM
+    command: |
+      echo "Unloading any loaded models..."
+      curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:12b","keep_alive":0}' || true
+      sleep 2
+      echo "Previous model unloaded"
+
+  - name: Verify dual GPU availability
+    command: |
+      echo "=== GPU Configuration ==="
+      GPU_COUNT=$(docker exec ollama37 nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+      echo "GPUs detected: $GPU_COUNT"
+
+      if [ "$GPU_COUNT" -lt 2 ]; then
+        echo "WARNING: Less than 2 GPUs detected. 27b model may not fit."
+      fi
+
+      docker exec ollama37 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv
+
+  - name: Check if gemma3:27b model exists
+    command: docker exec ollama37 ollama list | grep -q "gemma3:27b" && echo "Model exists" || echo "Model not found"
+
+  - name: Pull gemma3:27b model if needed
+    command: docker exec ollama37 ollama list | grep -q "gemma3:27b" || docker exec ollama37 ollama pull gemma3:27b
+    timeout: 1200000
+
+  - name: Verify model available
+    command: docker exec ollama37 ollama list | grep gemma3:27b
+
+  - name: Warmup model (preload into both GPUs)
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:27b","prompt":"hi","stream":false}' \
+        | jq -r '.response' | head -c 100
+    timeout: 600000
+
+  - name: Verify model loaded across GPUs
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=10m 2>&1)
+
+      echo "=== Model Loading Check for gemma3:27b ==="
+
+      # Check for layer offloading to GPU
+      if echo "$LOGS" | grep -q "offloaded.*layers to GPU"; then
+        echo "SUCCESS: Model layers offloaded to GPU"
+        echo "$LOGS" | grep "offloaded.*layers to GPU" | tail -1
+      else
+        echo "ERROR: Model layers not offloaded to GPU"
+        exit 1
+      fi
+
+      # Check llama runner started
+      if echo "$LOGS" | grep -q "llama runner started"; then
+        echo "SUCCESS: Llama runner started"
+      else
+        echo "ERROR: Llama runner not started"
+        exit 1
+      fi
+
+      # Check for multi-GPU allocation in memory logs
+      echo ""
+      echo "=== GPU Memory Allocation ==="
+      echo "$LOGS" | grep -E "device=CUDA" | tail -10
+
+  - name: Verify both GPUs have memory allocated
+    command: |
+      echo "=== GPU Memory Usage ==="
+      docker exec ollama37 nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv
+
+      echo ""
+      echo "=== Per-GPU Process Memory ==="
+      docker exec ollama37 nvidia-smi pmon -c 1 2>/dev/null || docker exec ollama37 nvidia-smi
+
+      # Check both GPUs are being used
+      GPU0_MEM=$(docker exec ollama37 nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 0 | tr -d ' ')
+      GPU1_MEM=$(docker exec ollama37 nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 1 | tr -d ' ')
+
+      echo ""
+      echo "GPU 0 memory used: ${GPU0_MEM} MiB"
+      echo "GPU 1 memory used: ${GPU1_MEM} MiB"
+
+      # Both GPUs should have significant memory usage for 27b model
+      if [ "$GPU0_MEM" -gt 1000 ] && [ "$GPU1_MEM" -gt 1000 ]; then
+        echo "SUCCESS: Both GPUs have significant memory allocation (dual-GPU split confirmed)"
+      else
+        echo "WARNING: One GPU may have low memory usage - model might not be split optimally"
+      fi
+
+  - name: Run inference test
+    command: docker exec ollama37 ollama run gemma3:27b "Explain quantum entanglement in one sentence." 2>&1
+    timeout: 300000
+
+  - name: Check for inference errors
+    command: |
+      cd docker
+      LOGS=$(docker compose logs --since=10m 2>&1)
+
+      echo "=== Inference Error Check ==="
+
+      if echo "$LOGS" | grep -qE "CUBLAS_STATUS_"; then
+        echo "CRITICAL: CUBLAS error during inference:"
+        echo "$LOGS" | grep -E "CUBLAS_STATUS_"
+        exit 1
+      fi
+
+      if echo "$LOGS" | grep -qE "CUDA error"; then
+        echo "CRITICAL: CUDA error during inference:"
+        echo "$LOGS" | grep -E "CUDA error"
+        exit 1
+      fi
+
+      if echo "$LOGS" | grep -qi "out of memory"; then
+        echo "ERROR: Out of memory"
+        echo "$LOGS" | grep -i "out of memory"
+        exit 1
+      fi
+
+      echo "SUCCESS: No inference errors"
+
+  - name: Unload model after test
+    command: |
+      echo "Unloading gemma3:27b from VRAM..."
+      curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:27b","keep_alive":0}' || true
+      sleep 3
+      echo "Model unloaded"
+
+  - name: Verify VRAM released
+    command: |
+      echo "=== Post-Unload GPU Memory ==="
+      docker exec ollama37 nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv
+
+criteria: |
+  The gemma3:27b model should run inference using both GPUs on Tesla K80.
+
+  Expected:
+  - Model downloads successfully (~17GB)
+  - Model loads and splits across both K80 GPUs
+  - Logs show "offloaded X/Y layers to GPU"
+  - Logs show "llama runner started"
+  - Both GPU 0 and GPU 1 show significant memory usage (>1GB each)
+  - Inference returns a coherent response about quantum entanglement
+  - NO CUBLAS_STATUS_ errors
+  - NO CUDA errors
+  - NO out of memory errors
+
+  This is a large model that requires dual-GPU on K80 (11GB + 11GB = 22GB available).
+  The model (~17GB) should split layers across both GPUs.
+  Accept any reasonable explanation of quantum entanglement.
+  Inference will be slower than smaller models due to cross-GPU communication.
