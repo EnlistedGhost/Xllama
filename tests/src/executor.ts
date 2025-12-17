@@ -1,6 +1,7 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { TestCase, TestResult, StepResult } from './types.js'
+import { LogCollector } from './log-collector.js'
 
 const execAsync = promisify(exec)
 
@@ -17,9 +18,12 @@ export class TestExecutor {
   private workingDir: string
   private totalTests: number = 0
   private currentTest: number = 0
+  private logCollector: LogCollector | null = null
+  private currentTestId: string | null = null
 
-  constructor(workingDir: string = process.cwd()) {
+  constructor(workingDir: string = process.cwd(), logCollector?: LogCollector) {
     this.workingDir = workingDir
+    this.logCollector = logCollector || null
   }
 
   // Progress output goes to stderr (visible in console)
@@ -34,12 +38,24 @@ export class TestExecutor {
     let exitCode = 0
     let timedOut = false
 
+    // Build environment with TEST_ID for log access
+    const env = { ...process.env }
+    if (this.currentTestId) {
+      env.TEST_ID = this.currentTestId
+    }
+
+    // Update log file before each step so test can access current logs
+    if (this.logCollector && this.currentTestId) {
+      this.logCollector.writeCurrentLogs(this.currentTestId)
+    }
+
     try {
       const result = await execAsync(command, {
         cwd: this.workingDir,
         timeout,
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-        shell: '/bin/bash'
+        shell: '/bin/bash',
+        env
       })
       stdout = result.stdout
       stderr = result.stderr
@@ -77,7 +93,13 @@ export class TestExecutor {
     const timestamp = new Date().toISOString().substring(11, 19)
 
     this.currentTest++
+    this.currentTestId = testCase.id
     this.progress(`[${timestamp}] [${this.currentTest}/${this.totalTests}] ${testCase.id}: ${testCase.name}`)
+
+    // Mark test start for log collection
+    if (this.logCollector) {
+      this.logCollector.markTestStart(testCase.id)
+    }
 
     for (let i = 0; i < testCase.steps.length; i++) {
       const step = testCase.steps[i]
@@ -105,6 +127,12 @@ export class TestExecutor {
     }
 
     const totalDuration = Date.now() - startTime
+
+    // Mark test end for log collection
+    if (this.logCollector) {
+      this.logCollector.markTestEnd(testCase.id)
+    }
+    this.currentTestId = null
 
     // Combine all logs
     const logs = stepResults.map(r => {

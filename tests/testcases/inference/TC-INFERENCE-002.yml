@@ -17,8 +17,12 @@ steps:
 
   - name: Check for inference errors in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== Inference Error Check ==="
 
@@ -47,8 +51,12 @@ steps:
 
   - name: Verify inference request in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== Inference Request Verification ==="
 
@@ -69,8 +77,12 @@ steps:
 
   - name: Display recent CUDA activity from logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== Recent CUDA Activity ==="
       echo "$LOGS" | grep -iE "(CUDA|cuda|device=CUDA)" | tail -5 || echo "No recent CUDA activity logged"

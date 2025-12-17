@@ -22,8 +22,12 @@ steps:
 
   - name: Verify API requests logged successfully
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== API Request Log Verification ==="
 
@@ -40,8 +44,12 @@ steps:
 
   - name: Check for API errors in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== API Error Check ==="
 
@@ -64,8 +72,12 @@ steps:
 
   - name: Display API response times from logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== API Response Times ==="
 

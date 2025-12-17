@@ -9,6 +9,7 @@ import { TestExecutor } from "./executor.js";
 import { LLMJudge } from "./judge.js";
 import { Reporter, TestLinkReporter } from "./reporter.js";
 import { RunnerOptions, Judgment } from "./types.js";
+import { LogCollector } from "./log-collector.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultTestcasesDir = path.join(__dirname, "..", "testcases");
@@ -68,8 +69,11 @@ program
     log("=".repeat(60));
 
     const loader = new TestLoader(options.testcasesDir);
-    const executor = new TestExecutor(path.join(__dirname, "..", ".."));
+    const projectRoot = path.join(__dirname, "..", "..");
     const judge = new LLMJudge(options.judgeUrl, options.judgeModel);
+
+    // LogCollector will be created if running runtime or inference tests
+    let logCollector: LogCollector | undefined;
 
     // Load test cases
     log("\nLoading test cases...");
@@ -107,9 +111,37 @@ program
       process.exit(0);
     }
 
+    // Check if we need log collector (runtime or inference tests)
+    const needsLogCollector = testCases.some(
+      (tc) => tc.suite === "runtime" || tc.suite === "inference"
+    );
+
+    if (needsLogCollector) {
+      log("\nStarting log collector...");
+      logCollector = new LogCollector(projectRoot);
+      try {
+        await logCollector.start();
+        log("  Log collector started");
+      } catch (error) {
+        log(`  Warning: Log collector failed to start: ${error}`);
+        log("  Tests will run without precise log collection");
+        logCollector = undefined;
+      }
+    }
+
+    // Create executor with optional log collector
+    const executor = new TestExecutor(projectRoot, logCollector);
+
     // Execute tests (progress goes to stderr via executor)
     const workers = parseInt(options.workers);
     const results = await executor.executeAll(testCases, workers);
+
+    // Stop log collector if running
+    if (logCollector) {
+      log("\nStopping log collector...");
+      await logCollector.stop();
+      log("  Log collector stopped");
+    }
 
     // Judge results
     log("\nJudging results...");

@@ -27,8 +27,12 @@ steps:
 
   - name: Verify model loaded to GPU
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== Model Loading Check for gemma3:12b ==="
 
@@ -63,8 +67,12 @@ steps:
 
   - name: Check for inference errors
     command: |
-      cd docker
-      LOGS=$(docker compose logs --since=5m 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs --since=5m 2>&1)
+      fi
 
       echo "=== Inference Error Check ==="
 

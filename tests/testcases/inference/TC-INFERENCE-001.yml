@@ -27,8 +27,12 @@ steps:
 
   - name: Verify model loading in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== Model Loading Check ==="
 
@@ -58,8 +62,12 @@ steps:
 
   - name: Verify llama runner started
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== Llama Runner Check ==="
 
@@ -74,8 +82,12 @@ steps:
 
   - name: Check for model loading errors
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== Model Loading Error Check ==="
 
@@ -97,8 +109,12 @@ steps:
 
   - name: Display model memory allocation from logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== Model Memory Allocation ==="
       echo "$LOGS" | grep -E '(model weights|kv cache|compute graph|total memory).*device=' | tail -8

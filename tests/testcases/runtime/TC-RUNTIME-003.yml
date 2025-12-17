@@ -30,8 +30,12 @@ steps:
 
   - name: Verify server listening in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== Server Status Check ==="
 
@@ -46,8 +50,12 @@ steps:
 
   - name: Check for runtime errors in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== Runtime Error Check ==="
 
@@ -71,8 +79,12 @@ steps:
 
   - name: Verify API request handling in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== API Request Logs ==="
 

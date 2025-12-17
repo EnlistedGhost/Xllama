@@ -22,12 +22,21 @@ steps:
 
   - name: Capture startup logs
     command: |
-      cd docker && docker compose logs 2>&1 | head -100
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        head -100 /tmp/test-${TEST_ID}-logs.txt
+      else
+        cd docker && docker compose logs 2>&1 | head -100
+      fi
 
   - name: Check for startup errors in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       # Check for critical errors
       if echo "$LOGS" | grep -qE "(level=ERROR|CUBLAS_STATUS_|CUDA error|cudaMalloc failed)"; then

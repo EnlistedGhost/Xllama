@@ -30,8 +30,12 @@ steps:
 
   - name: Verify GPU detection in Ollama logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== GPU Detection Check ==="
 
@@ -60,8 +64,12 @@ steps:
 
   - name: Check for GPU-related errors in logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== GPU Error Check ==="
 
@@ -82,8 +90,12 @@ steps:
 
   - name: Display GPU memory status from logs
     command: |
-      cd docker
-      LOGS=$(docker compose logs 2>&1)
+      # Use log collector file if available, fallback to docker compose logs
+      if [ -f "/tmp/test-${TEST_ID}-logs.txt" ]; then
+        LOGS=$(cat /tmp/test-${TEST_ID}-logs.txt)
+      else
+        LOGS=$(cd docker && docker compose logs 2>&1)
+      fi
 
       echo "=== GPU Memory Status ==="
       echo "$LOGS" | grep -E "gpu memory.*library=CUDA" | tail -4
