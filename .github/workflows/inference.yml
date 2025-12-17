@@ -1,46 +1,46 @@
 name: Inference Tests
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch: # Manual trigger
     inputs:
       use_existing_container:
-        description: 'Use existing running container'
+        description: "Use existing running container"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'true'
-          - 'false'
+          - "true"
+          - "false"
       judge_mode:
-        description: 'Test judge mode'
+        description: "Test judge mode"
         required: false
-        default: 'simple'
+        default: "dual"
         type: choice
         options:
-          - 'simple'
-          - 'llm'
-          - 'dual'
+          - "simple"
+          - "llm"
+          - "dual"
       judge_model:
-        description: 'LLM model for judging (if llm/dual mode)'
+        description: "LLM model for judging (if llm/dual mode)"
         required: false
-        default: 'gemma3:4b'
+        default: "gemma3:12b"
         type: string
-  workflow_call:      # Called by other workflows
+  workflow_call: # Called by other workflows
     inputs:
       use_existing_container:
-        description: 'Container is already running'
+        description: "Container is already running"
         required: false
         default: false
         type: boolean
       judge_mode:
-        description: 'Test judge mode (simple, llm, dual)'
+        description: "Test judge mode (simple, llm, dual)"
         required: false
-        default: 'simple'
+        default: "dual"
         type: string
       judge_model:
-        description: 'LLM model for judging'
+        description: "LLM model for judging"
         required: false
-        default: 'gemma3:4b'
+        default: "gemma3:12b"
         type: string
     outputs:
       result:
@@ -64,7 +64,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install test runner dependencies
         run: cd tests && npm ci
@@ -84,16 +84,16 @@ jobs:
 
           # Build judge flags based on input
           JUDGE_FLAGS=""
-          if [ "${{ inputs.judge_mode }}" = "simple" ] || [ -z "${{ inputs.judge_mode }}" ]; then
+          if [ "${{ inputs.judge_mode }}" = "simple" ]; then
             JUDGE_FLAGS="--no-llm"
-          elif [ "${{ inputs.judge_mode }}" = "dual" ]; then
-            JUDGE_FLAGS="--dual-judge --judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+          elif [ "${{ inputs.judge_mode }}" = "llm" ]; then
+            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:12b' }}"
           else
-            # llm mode
-            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:4b' }}"
+            # dual mode (default)
+            JUDGE_FLAGS="--dual-judge --judge-model ${{ inputs.judge_model || 'gemma3:12b' }}"
           fi
 
-          echo "Judge mode: ${{ inputs.judge_mode || 'simple' }}"
+          echo "Judge mode: ${{ inputs.judge_mode || 'dual' }}"
           echo "Judge flags: $JUDGE_FLAGS"
 
           # Progress goes to stderr (visible), JSON results go to file
