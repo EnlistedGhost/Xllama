@@ -99,10 +99,16 @@ export class LogCollector {
     }
 
     return new Promise((resolve) => {
-      this.process!.on("close", () => {
-        this.isRunning = false;
-        resolve();
-      });
+      let resolved = false;
+      const doResolve = () => {
+        if (!resolved) {
+          resolved = true;
+          this.isRunning = false;
+          resolve();
+        }
+      };
+
+      this.process!.on("close", doResolve);
 
       this.process!.kill("SIGTERM");
 
@@ -111,7 +117,7 @@ export class LogCollector {
         if (this.isRunning && this.process) {
           this.process.kill("SIGKILL");
         }
-        resolve();
+        doResolve();
       }, 5000);
     });
   }

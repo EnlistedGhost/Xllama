@@ -19,6 +19,9 @@ export class TestExecutor {
   private totalTests: number = 0
   private currentTest: number = 0
   private logCollector: LogCollector | null = null
+  // Note: currentTestId is shared state - LogCollector only works correctly
+  // with sequential execution (concurrency=1). Parallel execution will have
+  // inaccurate log boundaries.
   private currentTestId: string | null = null
 
   constructor(workingDir: string = process.cwd(), logCollector?: LogCollector) {
