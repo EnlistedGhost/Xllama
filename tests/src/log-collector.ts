@@ -219,7 +219,8 @@ export class LogCollector {
         sedCmd = `sed -n '/===MARKER:START:${escapedTestId}:/,/===MARKER:END:${escapedTestId}:/{/===MARKER:/d;p}' "${this.sessionFile}"`;
       } else {
         // Extract from START to EOF (test still running, no END marker yet)
-        sedCmd = `sed -n '/===MARKER:START:${escapedTestId}:/,\\${/===MARKER:/d;p}' "${this.sessionFile}"`;
+        // Note: Use ${'$'} to insert literal $ in template literal (avoids ${} interpolation)
+        sedCmd = `sed -n '/===MARKER:START:${escapedTestId}:/,${'$'}{/===MARKER:/d;p}' "${this.sessionFile}"`;
       }
 
       const result = execSync(sedCmd, {
