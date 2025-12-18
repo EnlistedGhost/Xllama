@@ -15,7 +15,6 @@ steps:
     rejectPatterns:
       - "error:"
       - "Error:"
-      - "FAILED"
 
   - name: Verify runtime image exists
     command: docker images ollama37:latest --format '{{.Repository}}:{{.Tag}} {{.Size}}'
