@@ -92,6 +92,55 @@ export class TestLoader {
   }
 
   /**
+   * Resolve all dependencies for a filtered set of test cases.
+   * Handles cross-suite dependencies by looking up from the full test set.
+   *
+   * @param filteredTests - The tests selected by user filters
+   * @param allTests - The complete set of all available test cases
+   * @returns Object with expanded test list and auto-included dependency IDs
+   */
+  resolveDependencies(
+    filteredTests: TestCase[],
+    allTests: TestCase[]
+  ): { tests: TestCase[]; autoIncluded: string[] } {
+    const filteredIds = new Set(filteredTests.map((tc) => tc.id));
+    const allTestsMap = new Map(allTests.map((tc) => [tc.id, tc]));
+    const result = new Map<string, TestCase>();
+    const autoIncluded: string[] = [];
+
+    // Recursive function to collect a test and all its dependencies
+    const collectWithDeps = (testId: string) => {
+      // Already processed
+      if (result.has(testId)) return;
+
+      const test = allTestsMap.get(testId);
+      if (!test) {
+        process.stderr.write(`[WARN] Dependency ${testId} not found\n`);
+        return;
+      }
+
+      // Collect dependencies first (recursive)
+      for (const depId of test.dependencies) {
+        collectWithDeps(depId);
+      }
+
+      result.set(testId, test);
+
+      // Track if this was auto-included (not in original filter)
+      if (!filteredIds.has(testId)) {
+        autoIncluded.push(testId);
+      }
+    };
+
+    // Process each filtered test
+    for (const test of filteredTests) {
+      collectWithDeps(test.id);
+    }
+
+    return { tests: Array.from(result.values()), autoIncluded };
+  }
+
+  /**
    * Group test cases by suite.
    * Returns groups in execution order: build -> runtime -> inference
    */

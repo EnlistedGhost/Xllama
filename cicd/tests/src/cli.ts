@@ -77,30 +77,43 @@ program
 
     // Load test cases
     const loader = new TestLoader(testcasesDir);
-    let testCases = await loader.loadAll();
+    const allTestCases = await loader.loadAll();
 
-    if (testCases.length === 0) {
+    if (allTestCases.length === 0) {
       process.stderr.write('[ERROR] No test cases found\n');
       process.exit(1);
     }
 
+    // Apply user filters
+    let filteredTestCases = allTestCases;
+
     // Filter by suite
     if (config.suite) {
-      testCases = testCases.filter((tc) => tc.suite === config.suite);
+      filteredTestCases = filteredTestCases.filter((tc) => tc.suite === config.suite);
     }
 
     // Filter by ID
     if (config.testId) {
-      testCases = testCases.filter((tc) => tc.id === config.testId);
+      filteredTestCases = filteredTestCases.filter((tc) => tc.id === config.testId);
     }
 
-    if (testCases.length === 0) {
+    if (filteredTestCases.length === 0) {
       process.stderr.write('[ERROR] No matching test cases found\n');
       process.exit(1);
     }
 
+    // Resolve cross-suite dependencies
+    const { tests: resolvedTestCases, autoIncluded } = loader.resolveDependencies(
+      filteredTestCases,
+      allTestCases
+    );
+
+    if (autoIncluded.length > 0) {
+      process.stderr.write(`[INFO] Auto-included ${autoIncluded.length} dependency test(s): ${autoIncluded.join(', ')}\n`);
+    }
+
     // Sort by dependencies
-    testCases = loader.sortByDependencies(testCases);
+    const testCases = loader.sortByDependencies(resolvedTestCases);
 
     process.stderr.write(`[INFO] Found ${testCases.length} test(s) to run\n`);
 
