@@ -30,8 +30,8 @@ export interface TestCase {
   id: string;
   /** Human-readable test name */
   name: string;
-  /** Test suite (build, runtime, inference) */
-  suite: 'build' | 'runtime' | 'inference';
+  /** Test suite (build, runtime, inference, models) */
+  suite: 'build' | 'runtime' | 'inference' | 'models';
   /** Execution priority (lower = runs first) */
   priority: number;
   /** Default timeout for all steps in ms */
@@ -210,7 +210,7 @@ export interface TestSummary {
  */
 export interface RunConfig {
   /** Filter by suite */
-  suite?: 'build' | 'runtime' | 'inference';
+  suite?: 'build' | 'runtime' | 'inference' | 'models';
   /** Filter by specific test ID */
   testId?: string;
   /** Show what would run without executing */
