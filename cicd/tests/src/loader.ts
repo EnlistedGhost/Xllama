@@ -97,7 +97,7 @@ export class TestLoader {
    */
   groupBySuite(testCases: TestCase[]): Map<string, TestCase[]> {
     const groups = new Map<string, TestCase[]>();
-    const suiteOrder = ['build', 'runtime', 'inference'];
+    const suiteOrder = ['build', 'runtime', 'inference', 'models'];
 
     // Initialize groups in order
     for (const suite of suiteOrder) {
@@ -139,7 +139,7 @@ export class TestLoader {
       console.error(`${filePath}: missing or invalid 'name' field`);
       return null;
     }
-    if (!raw.suite || !['build', 'runtime', 'inference'].includes(raw.suite as string)) {
+    if (!raw.suite || !['build', 'runtime', 'inference', 'models'].includes(raw.suite as string)) {
       console.error(`${filePath}: missing or invalid 'suite' field`);
       return null;
     }
@@ -172,7 +172,7 @@ export class TestLoader {
     return {
       id: raw.id as string,
       name: raw.name as string,
-      suite: raw.suite as 'build' | 'runtime' | 'inference',
+      suite: raw.suite as 'build' | 'runtime' | 'inference' | 'models',
       priority: typeof raw.priority === 'number' ? raw.priority : 1,
       timeout: typeof raw.timeout === 'number' ? raw.timeout : 60000,
       dependencies: Array.isArray(raw.dependencies) ? raw.dependencies : [],

@@ -29,7 +29,7 @@ program
 program
   .command('run')
   .description('Run test cases')
-  .option('-s, --suite <suite>', 'Run only tests from this suite (build, runtime, inference)')
+  .option('-s, --suite <suite>', 'Run only tests from this suite (build, runtime, inference, models)')
   .option('-i, --id <id>', 'Run only the test with this ID')
   .option('--dry-run', 'Show what would run without executing', false)
   .option('--no-llm', 'Skip LLM judging (simple judge only)')
