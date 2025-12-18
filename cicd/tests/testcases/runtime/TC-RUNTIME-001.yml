@@ -1,0 +1,45 @@
+id: TC-RUNTIME-001
+name: Container Startup
+suite: runtime
+priority: 1
+timeout: 120000
+dependencies: []
+
+steps:
+  - name: Start container
+    command: cd /home/jack/src/ollama37/docker && docker compose up -d
+    rejectPatterns:
+      - "error"
+      - "Error"
+
+  - name: Wait for container health
+    command: |
+      echo "Waiting for container to become healthy..."
+      for i in {1..30}; do
+        STATUS=$(docker inspect ollama37 --format='{{.State.Health.Status}}' 2>/dev/null || echo "not_found")
+        echo "Attempt $i: Status = $STATUS"
+        if [ "$STATUS" = "healthy" ]; then
+          echo "Container is healthy!"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "Timeout waiting for healthy status"
+      exit 1
+    timeout: 90000
+    expectPatterns:
+      - "Container is healthy"
+
+  - name: Check container status
+    command: docker compose -f /home/jack/src/ollama37/docker/docker-compose.yml ps
+    expectPatterns:
+      - "ollama37"
+      - "Up"
+
+criteria: |
+  Start the ollama37 container with GPU passthrough using docker compose.
+
+  Expected:
+  - Container starts without errors
+  - Health check passes (status = "healthy")
+  - Container shows as "Up" in docker compose ps

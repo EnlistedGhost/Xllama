@@ -1,0 +1,51 @@
+id: TC-BUILD-003
+name: Image Size Validation
+suite: build
+priority: 3
+timeout: 60000
+dependencies:
+  - TC-BUILD-002
+
+steps:
+  - name: Check builder image size
+    command: |
+      SIZE=$(docker images ollama37-builder:latest --format '{{.Size}}')
+      echo "Builder image size: $SIZE"
+      # Extract numeric value and unit
+      NUM=$(echo "$SIZE" | grep -oE '[0-9.]+')
+      UNIT=$(echo "$SIZE" | grep -oE '[A-Z]+')
+      if [ "$UNIT" = "GB" ]; then
+        if (( $(echo "$NUM >= 10" | bc -l) )) && (( $(echo "$NUM <= 25" | bc -l) )); then
+          echo "VALID: Builder size $SIZE is within 10-25GB range"
+          exit 0
+        fi
+      fi
+      echo "INVALID: Builder size $SIZE is outside expected 10-25GB range"
+      exit 1
+    expectPatterns:
+      - "VALID"
+
+  - name: Check runtime image size
+    command: |
+      SIZE=$(docker images ollama37:latest --format '{{.Size}}')
+      echo "Runtime image size: $SIZE"
+      NUM=$(echo "$SIZE" | grep -oE '[0-9.]+')
+      UNIT=$(echo "$SIZE" | grep -oE '[A-Z]+')
+      if [ "$UNIT" = "GB" ]; then
+        if (( $(echo "$NUM >= 15" | bc -l) )) && (( $(echo "$NUM <= 30" | bc -l) )); then
+          echo "VALID: Runtime size $SIZE is within 15-30GB range"
+          exit 0
+        fi
+      fi
+      echo "INVALID: Runtime size $SIZE is outside expected 15-30GB range"
+      exit 1
+    expectPatterns:
+      - "VALID"
+
+criteria: |
+  Verify Docker image sizes are within expected ranges:
+  - Builder image: 10-25GB (contains full toolchain)
+  - Runtime image: 15-30GB (contains compiled binary and CUDA libraries)
+
+  These sizes are larger than typical images due to CUDA toolkit and
+  GCC 10 being compiled from source.

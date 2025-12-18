@@ -1,0 +1,31 @@
+id: TC-RUNTIME-003
+name: Health Check
+suite: runtime
+priority: 3
+timeout: 60000
+dependencies:
+  - TC-RUNTIME-001
+
+steps:
+  - name: Check container health status
+    command: docker inspect ollama37 --format='{{.State.Health.Status}}'
+    expectPatterns:
+      - "healthy"
+
+  - name: Test API endpoint
+    command: curl -s http://localhost:11434/api/tags
+    expectPatterns:
+      - "models"
+
+  - name: Check Ollama version
+    command: docker exec ollama37 ollama --version
+    expectPatterns:
+      - "ollama"
+
+criteria: |
+  Verify Ollama server health check passes and API is responsive.
+
+  Expected:
+  - Container health status is "healthy"
+  - API endpoint /api/tags returns JSON with "models" field
+  - ollama --version returns version information

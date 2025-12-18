@@ -36,7 +36,10 @@ The test framework is designed around two key insights:
 
 The framework implements a dual-judge architecture:
 
-**Simple Judge**: Fast, deterministic verification based on exit codes. Catches obvious failures like command not found, timeout, or explicit error exits.
+**Simple Judge**: Fast, deterministic verification based on:
+- Exit codes (all steps must return 0)
+- Pattern matching (expected patterns found, rejected patterns absent in output)
+- CUDA error detection (no CUBLAS/CUDA errors in logs)
 
 **LLM Judge**: Semantic analysis of test execution logs using a language model. The judge receives test criteria and logs, then evaluates whether the actual behavior matches expected behavior. This catches:
 - CUDA errors that don't cause exit failures
@@ -64,12 +67,12 @@ docker compose logs --follow --timestamps
          ▼
 /tmp/ollama37-session-{timestamp}.log  (persistent file)
          │
-===MARKER:START:TC-001:2024-01-15T10:30:05Z===
+===TEST:TC-001:START:2024-01-15T10:30:05Z===
 [container logs during test]
-===MARKER:END:TC-001:2024-01-15T10:30:15Z===
+===TEST:TC-001:END:2024-01-15T10:30:15Z===
          │
          ▼ sed extraction
-/tmp/test-TC-001-logs.txt  (test-specific logs)
+cicd/results/{run-timestamp}/TC-001.log  (test-specific logs)
 ```
 
 #### Session File Format
@@ -79,19 +82,19 @@ The session file contains all docker logs with embedded markers:
 ```
 ===SESSION:START:2024-01-15T10:30:00.000Z===
 ollama37  | 2024-01-15T10:30:01Z msg="starting server"
-===MARKER:START:TC-RUNTIME-001:2024-01-15T10:30:05.123Z===
+===TEST:TC-RUNTIME-001:START:2024-01-15T10:30:05.123Z===
 ollama37  | 2024-01-15T10:30:06Z msg="inference compute" library=CUDA
 ollama37  | 2024-01-15T10:30:07Z msg="loaded model" layers=28
-===MARKER:END:TC-RUNTIME-001:2024-01-15T10:30:15.789Z===
-===MARKER:START:TC-RUNTIME-002:2024-01-15T10:30:16.000Z===
+===TEST:TC-RUNTIME-001:END:2024-01-15T10:30:15.789Z===
+===TEST:TC-RUNTIME-002:START:2024-01-15T10:30:16.000Z===
 [more logs...]
-===MARKER:END:TC-RUNTIME-002:2024-01-15T10:30:45.000Z===
+===TEST:TC-RUNTIME-002:END:2024-01-15T10:30:45.000Z===
 ===SESSION:END:2024-01-15T10:31:00.000Z===
 ```
 
-**Marker Format**: `===MARKER:{TYPE}:{TEST_ID}:{ISO_TIMESTAMP}===`
-- TYPE: `START`, `END`, or `SESSION`
+**Marker Format**: `===TEST:{TEST_ID}:{TYPE}:{ISO_TIMESTAMP}===`
 - TEST_ID: Test case identifier (e.g., `TC-RUNTIME-001`)
+- TYPE: `START` or `END`
 - ISO_TIMESTAMP: When the marker was written
 
 #### Log Extraction
@@ -100,14 +103,14 @@ Test-specific logs are extracted using sed:
 
 ```bash
 # Extract logs for TC-RUNTIME-001 (excluding marker lines)
-sed -n '/===MARKER:START:TC-RUNTIME-001:/,/===MARKER:END:TC-RUNTIME-001:/{/===MARKER:/d;p}' \
+sed -n '/===TEST:TC-RUNTIME-001:START:/,/===TEST:TC-RUNTIME-001:END:/{/===TEST:/d;p}' \
   /tmp/ollama37-session-*.log
 ```
 
 For tests still running (no END marker yet), extraction continues to EOF:
 
 ```bash
-sed -n '/===MARKER:START:TC-RUNTIME-001:/,${/===MARKER:/d;p}' /tmp/ollama37-session-*.log
+sed -n '/===TEST:TC-RUNTIME-001:START:/,${/===TEST:/d;p}' /tmp/ollama37-session-*.log
 ```
 
 #### Design Benefits
@@ -183,3 +186,63 @@ These patterns are checked by both the simple judge (via grep in test steps) and
 - LLM judge requires a working Ollama instance (chicken-and-egg for broken builds)
 - K80 VRAM limits restrict maximum model size to ~27B parameters
 - Build times are significant due to CUDA compilation
+
+## Framework Structure
+
+The test framework is located at `cicd/tests/`:
+
+```
+cicd/
+├── docs/
+│   ├── CICD.md              # This document
+│   └── PLAN.md              # Infrastructure planning
+├── specs/
+│   ├── build.md             # Build test specifications
+│   ├── runtime.md           # Runtime test specifications
+│   └── inference.md         # Inference test specifications
+├── tests/
+│   ├── src/
+│   │   ├── cli.ts           # CLI entry point
+│   │   ├── types.ts         # TypeScript interfaces
+│   │   ├── loader.ts        # YAML test case loader
+│   │   ├── executor.ts      # Test execution engine
+│   │   ├── log-collector.ts # Docker log capture
+│   │   ├── judge/
+│   │   │   ├── simple-judge.ts
+│   │   │   └── llm-judge.ts
+│   │   └── reporter/
+│   │       ├── json.ts
+│   │       └── console.ts
+│   ├── testcases/
+│   │   ├── build/           # TC-BUILD-001, 002, 003
+│   │   ├── runtime/         # TC-RUNTIME-001, 002, 003
+│   │   └── inference/       # TC-INFERENCE-001, 002, 003
+│   ├── package.json
+│   └── tsconfig.json
+├── results/                 # Test output (gitignored)
+└── README.md                # Quick start guide
+```
+
+## Quick Start
+
+```bash
+# Navigate to test framework
+cd cicd/tests
+
+# Install dependencies
+npm install
+
+# Run all tests
+npm run test
+
+# Run specific suite
+npm run test -- --suite build
+npm run test -- --suite runtime
+npm run test -- --suite inference
+
+# Run without LLM judge
+npm run test -- --no-llm
+
+# List available tests
+npm run list
+```

@@ -1,0 +1,36 @@
+id: TC-INFERENCE-002
+name: Basic Inference
+suite: inference
+priority: 2
+timeout: 300000
+dependencies:
+  - TC-INFERENCE-001
+
+steps:
+  - name: Run simple inference
+    command: docker exec ollama37 ollama run gemma3:4b "What is 2+2? Answer with just the number." --verbose 2>&1
+    timeout: 180000
+    expectPatterns:
+      - "4|four"
+    rejectPatterns:
+      - "CUBLAS_STATUS"
+      - "CUDA error"
+      - "cudaMalloc failed"
+
+  - name: Check GPU memory usage
+    command: docker exec ollama37 nvidia-smi --query-compute-apps=pid,used_memory --format=csv
+    expectPatterns:
+      - "[0-9]+ MiB"
+
+criteria: |
+  Run basic inference test with gemma3:4b model.
+
+  Expected:
+  - Model responds with "4" or equivalent number
+  - No CUDA/CUBLAS errors in output
+  - GPU memory is allocated (visible in nvidia-smi)
+
+  The test validates that:
+  1. Model loads correctly into VRAM
+  2. CUDA operations work on K80 (compute 3.7)
+  3. Inference produces correct results

@@ -1,0 +1,34 @@
+id: TC-BUILD-002
+name: Runtime Image Build
+suite: build
+priority: 2
+timeout: 1800000
+dependencies:
+  - TC-BUILD-001
+
+steps:
+  - name: Navigate and build runtime image
+    command: cd /home/jack/src/ollama37/docker && make build-runtime 2>&1
+    timeout: 1800000
+    expectPatterns:
+      - "Runtime image built successfully"
+    rejectPatterns:
+      - "error:"
+      - "Error:"
+      - "FAILED"
+
+  - name: Verify runtime image exists
+    command: docker images ollama37:latest --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+    expectPatterns:
+      - "ollama37:latest"
+
+criteria: |
+  Build the ollama37 runtime Docker image from source.
+
+  Expected:
+  - Build completes without errors
+  - Final message: "Runtime image built successfully!"
+  - Runtime image exists (ollama37:latest)
+  - Image size approximately 18GB
+
+  Note: Build time may take 10+ minutes for CUDA compilation.

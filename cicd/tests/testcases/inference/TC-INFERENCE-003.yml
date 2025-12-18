@@ -1,0 +1,48 @@
+id: TC-INFERENCE-003
+name: API Endpoint Test
+suite: inference
+priority: 3
+timeout: 180000
+dependencies:
+  - TC-INFERENCE-001
+
+steps:
+  - name: Test generate endpoint (non-streaming)
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:4b","prompt":"Say hello in exactly 3 words","stream":false}' \
+        | head -c 1000
+    timeout: 120000
+    expectPatterns:
+      - "response"
+    rejectPatterns:
+      - "error"
+      - "Error"
+
+  - name: Test streaming response
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:4b","prompt":"Count from 1 to 3","stream":true}' \
+        | head -3
+    timeout: 120000
+    expectPatterns:
+      - "response"
+
+  - name: Unload model after test
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"gemma3:4b","keep_alive":0}'
+      echo "Model unload requested"
+    expectPatterns:
+      - "Model unload requested"
+
+criteria: |
+  Test the Ollama REST API /api/generate endpoint.
+
+  Expected:
+  - Non-streaming request returns JSON with "response" field
+  - Streaming request returns multiple JSON lines
+  - No errors in API responses
+
+  Tests validate that the HTTP API works correctly for
+  both streaming and non-streaming modes.
