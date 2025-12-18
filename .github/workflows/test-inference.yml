@@ -102,7 +102,7 @@ jobs:
 
       - name: Check test results
         run: |
-          FAILED=$(jq '.failed' /tmp/inference-results.json)
+          FAILED=$(jq '.summary.failed' /tmp/inference-results.json)
           echo "Failed tests: $FAILED"
           if [ "$FAILED" -gt 0 ]; then
             echo "::error::$FAILED inference test(s) failed"

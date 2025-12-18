@@ -98,7 +98,7 @@ jobs:
 
       - name: Check test results
         run: |
-          FAILED=$(jq '.failed' /tmp/runtime-results.json)
+          FAILED=$(jq '.summary.failed' /tmp/runtime-results.json)
           echo "Failed tests: $FAILED"
           if [ "$FAILED" -gt 0 ]; then
             echo "::error::$FAILED runtime test(s) failed"
