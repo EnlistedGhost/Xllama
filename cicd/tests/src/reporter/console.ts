@@ -43,6 +43,9 @@ export class ConsoleReporter {
 
       console.log(`  Simple Judge: ${simpleStatus} - ${report.simpleJudge.reason}`);
       console.log(`  LLM Judge: ${llmStatus} - ${report.llmJudge.reason}`);
+      if (!report.llmJudge.pass && report.llmJudge.evidence) {
+        console.log(`  ${chalk.yellow('Evidence:')} ${report.llmJudge.evidence}`);
+      }
 
       if (report.logFile) {
         console.log(`  Log file: ${report.logFile}`);

@@ -17,7 +17,7 @@ export class LLMJudge {
   private model: string;
   private batchSize: number;
 
-  constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:4b') {
+  constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:12b') {
     this.ollamaUrl = ollamaUrl;
     this.model = model;
     this.batchSize = 5;
@@ -118,8 +118,10 @@ ${testsSection}
 Respond with a JSON array containing one object per test:
 [
   {"testId": "TC-XXX-001", "pass": true, "reason": "Brief explanation"},
-  {"testId": "TC-XXX-002", "pass": false, "reason": "Brief explanation"}
+  {"testId": "TC-XXX-002", "pass": false, "reason": "Brief explanation", "evidence": "The actual log line that caused failure"}
 ]
+
+When marking a test as FAIL, you MUST provide the "evidence" field with the exact log line content that caused the failure.
 
 Important:
 - For AI-generated text, accept reasonable variations (e.g., "4", "four", "The answer is 4")
@@ -149,7 +151,7 @@ Respond ONLY with the JSON array, no other text.`;
         },
       },
       {
-        timeout: 120000,
+        timeout: 300000,
       }
     );
 

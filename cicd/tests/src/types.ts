@@ -109,6 +109,8 @@ export interface Judgment {
   pass: boolean;
   /** Explanation of the verdict */
   reason: string;
+  /** Evidence log line (required when pass=false) */
+  evidence?: string;
 }
 
 // ============================================
@@ -236,6 +238,6 @@ export const DEFAULT_CONFIG: Partial<RunConfig> = {
   dryRun: false,
   noLlm: false,
   judgeUrl: 'http://localhost:11435',
-  judgeModel: 'gemma3:4b',
+  judgeModel: 'gemma3:12b',
   outputFormat: 'console',
 };
