@@ -3,11 +3,6 @@ name: Build Verification
 on:
   workflow_dispatch:
     inputs:
-      ollama_version:
-        description: "Ollama version to build"
-        required: false
-        default: ""
-        type: string
       judge_mode:
         description: "Test judge mode"
         required: false
@@ -23,11 +18,6 @@ on:
         type: string
   workflow_call:
     inputs:
-      ollama_version:
-        description: "Ollama version to build"
-        required: false
-        default: ""
-        type: string
       judge_mode:
         description: "Test judge mode (simple, dual)"
         required: false
@@ -49,7 +39,7 @@ jobs:
     runs-on: self-hosted
     environment: cicd-1
     env:
-      OLLAMA_VERSION: ${{ inputs.ollama_version || vars.OLLAMA_VERSION || '0.0.0' }}
+      OLLAMA_VERSION: ${{ vars.OLLAMA_VERSION || '0.0.0' }}
     outputs:
       result: ${{ steps.build-tests.outcome }}
 
