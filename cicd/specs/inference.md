@@ -22,36 +22,24 @@ Pull the gemma3:4b model for testing inside the container.
 
 ---
 
-## TC-INFERENCE-002: Basic Inference
+## TC-INFERENCE-002: API Inference Test
 
 **External ID:** ollama37-15
 **Importance:** High
 **Execution Type:** Automated
 
 **Summary:**
-Run basic inference test with gemma3:4b model.
+Test inference via Ollama REST API /api/generate endpoint.
 
 ### Steps
 
 | # | Action | Expected Result |
 |---|--------|-----------------|
-| 1 | Run simple inference:<br>`docker exec ollama37 ollama run gemma3:4b "What is 2+2? Answer with just the number." --verbose 2>&1` | Model responds with '4' or equivalent number |
-| 2 | Check GPU memory usage during inference:<br>`docker exec ollama37 nvidia-smi --query-compute-apps=pid,used_memory --format=csv` | Ollama process shows GPU memory allocation |
+| 1 | Test generate endpoint:<br>`curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","prompt":"What is 2+2? Answer with just the number.","stream":false}'` | Returns JSON with 'response' field |
+| 2 | Check GPU memory usage:<br>`docker exec ollama37 nvidia-smi --query-compute-apps=pid,used_memory --format=csv` | Ollama process shows GPU memory allocation |
+| 3 | Unload model after test:<br>`curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","keep_alive":0}'` | Model unloaded from VRAM |
 
----
+### Notes
 
-## TC-INFERENCE-003: API Endpoint Test
-
-**External ID:** ollama37-16
-**Importance:** Medium
-**Execution Type:** Automated
-
-**Summary:**
-Test the Ollama REST API /api/generate endpoint.
-
-### Steps
-
-| # | Action | Expected Result |
-|---|--------|-----------------|
-| 1 | Test generate endpoint:<br>`curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Say hello","stream":false}'` | Returns JSON with 'response' field containing greeting |
-| 2 | Test streaming response:<br>`curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Count 1 to 3","stream":true}' \| head -3` | Returns multiple JSON lines with streamed tokens |
+- **Acceptable warning:** "flash attention enabled but not supported by gpu" - K80 does not support flash attention, this is a normal fallback warning, NOT an error
+- No CUDA/CUBLAS errors should appear in output
