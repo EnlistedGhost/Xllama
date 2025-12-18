@@ -1,0 +1,131 @@
+name: Inference Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_existing_container:
+        description: "Use existing running container"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      judge_mode:
+        description: "Test judge mode"
+        required: false
+        default: "dual"
+        type: choice
+        options:
+          - "simple"
+          - "dual"
+      judge_model:
+        description: "LLM model for judging (if dual mode)"
+        required: false
+        default: "gemma3:12b"
+        type: string
+  workflow_call:
+    inputs:
+      use_existing_container:
+        description: "Container is already running"
+        required: false
+        default: false
+        type: boolean
+      judge_mode:
+        description: "Test judge mode (simple, dual)"
+        required: false
+        default: "dual"
+        type: string
+      judge_model:
+        description: "LLM model for judging"
+        required: false
+        default: "gemma3:12b"
+        type: string
+    outputs:
+      result:
+        description: "Inference test result"
+        value: ${{ jobs.inference.outputs.result }}
+
+env:
+  OLLAMA_HOST: http://localhost:11434
+
+jobs:
+  inference:
+    name: Inference Tests
+    runs-on: self-hosted
+    environment: cicd-1
+    outputs:
+      result: ${{ steps.inference-tests.outcome }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install test runner dependencies
+        run: cd cicd/tests && npm ci
+
+      - name: Start container (if needed)
+        if: ${{ inputs.use_existing_container != 'true' && inputs.use_existing_container != true }}
+        run: |
+          cd docker
+          docker compose down 2>/dev/null || true
+          docker compose up -d
+          sleep 10
+
+      - name: Run inference tests
+        id: inference-tests
+        run: |
+          cd cicd/tests
+
+          # Build judge flags based on input
+          JUDGE_FLAGS=""
+          if [ "${{ inputs.judge_mode }}" = "simple" ]; then
+            JUDGE_FLAGS="--no-llm"
+          else
+            # dual mode (default) - both judges run
+            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:12b' }}"
+          fi
+
+          echo "Judge mode: ${{ inputs.judge_mode || 'dual' }}"
+          echo "Judge flags: $JUDGE_FLAGS"
+
+          # Run tests with JSON output
+          npx tsx src/cli.ts run --suite inference $JUDGE_FLAGS --format json > /tmp/inference-results.json || true
+
+          echo "--- JSON Results ---"
+          cat /tmp/inference-results.json
+
+      - name: Check test results
+        run: |
+          FAILED=$(jq '.failed' /tmp/inference-results.json)
+          echo "Failed tests: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED inference test(s) failed"
+            exit 1
+          fi
+
+      - name: Unload test models from VRAM
+        if: always()
+        run: |
+          echo "Unloading test models from VRAM..."
+          curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:4b","keep_alive":0}' || true
+          echo "Models unloaded"
+
+      - name: Upload inference results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inference-test-results
+          path: /tmp/inference-results.json
+
+      - name: Stop container (if we started it)
+        if: ${{ always() && inputs.use_existing_container != 'true' && inputs.use_existing_container != true }}
+        run: |
+          cd docker
+          docker compose down || true
+          echo "Container stopped"
