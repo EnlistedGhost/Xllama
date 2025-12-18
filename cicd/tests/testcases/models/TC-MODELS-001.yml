@@ -3,8 +3,7 @@ name: gpt-oss:20b Inference
 suite: models
 priority: 1
 timeout: 900000
-dependencies:
-  - TC-RUNTIME-001
+dependencies: []
 
 steps:
   - name: Test inference

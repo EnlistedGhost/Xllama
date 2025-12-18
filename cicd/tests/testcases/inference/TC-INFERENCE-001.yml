@@ -3,8 +3,7 @@ name: Model Pull
 suite: inference
 priority: 1
 timeout: 600000
-dependencies:
-  - TC-RUNTIME-001
+dependencies: []
 
 steps:
   - name: Pull test model

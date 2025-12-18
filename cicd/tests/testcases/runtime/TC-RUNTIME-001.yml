@@ -6,6 +6,9 @@ timeout: 120000
 dependencies: []
 
 steps:
+  - name: Clean up old container
+    command: cd /home/jack/src/ollama37/docker && docker compose down 2>/dev/null || true
+
   - name: Start container
     command: cd /home/jack/src/ollama37/docker && docker compose up -d
     rejectPatterns:
