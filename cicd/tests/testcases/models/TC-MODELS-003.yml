@@ -7,15 +7,6 @@ dependencies:
   - TC-RUNTIME-001
 
 steps:
-  - name: Pull model
-    command: docker exec ollama37 ollama pull deepseek-r1:14b
-    timeout: 600000
-    expectPatterns:
-      - "success|already exists|pulling"
-    rejectPatterns:
-      - "error pulling"
-      - "Error:"
-
   - name: Test inference
     command: |
       curl -s http://localhost:11434/api/generate \
@@ -42,9 +33,9 @@ steps:
 
 criteria: |
   Validate deepseek-r1:14b (~14B params, ~10GB VRAM) runs on K80 (compute 3.7).
+  Prerequisite: Model must be pre-pulled before running this test.
 
   Expected:
-  - Model pulls successfully or already exists
   - API returns JSON with "response" field
   - GPU memory is allocated (visible in nvidia-smi)
   - No CUDA/CUBLAS errors in output
