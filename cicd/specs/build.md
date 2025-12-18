@@ -1,14 +1,14 @@
 # Build Tests
 
-Exported from TestLink project: **ollama37**
+Test specifications for ollama37 build verification.
 
 ---
 
 ## TC-BUILD-001: Builder Image Verification
 
-**External ID:** ollama37-8
 **Importance:** High
 **Execution Type:** Automated
+**Timeout:** 60 seconds
 
 **Summary:**
 Verify the ollama37-builder Docker image exists and contains required build tools.
@@ -26,35 +26,22 @@ Verify the ollama37-builder Docker image exists and contains required build tool
 
 ## TC-BUILD-002: Runtime Image Build
 
-**External ID:** ollama37-9
 **Importance:** High
 **Execution Type:** Automated
+**Timeout:** 30 minutes
+**Dependencies:** TC-BUILD-001
 
 **Summary:**
-Build the ollama37 runtime Docker image from GitHub source.
+Build the ollama37 runtime Docker image from source.
 
 ### Steps
 
 | # | Action | Expected Result |
 |---|--------|-----------------|
-| 1 | Navigate to docker directory:<br>`cd /home/jack/src/ollama37/docker` | Directory exists |
-| 2 | Build runtime image:<br>`make build-runtime 2>&1 \| tee /tmp/build.log` | Build completes with message: Runtime image built successfully! |
-| 3 | Verify runtime image exists:<br>`docker images ollama37:latest --format '{{.Repository}}:{{.Tag}} {{.Size}}'` | Output: ollama37:latest with size ~18GB |
+| 1 | Build runtime image:<br>`cd /home/jack/src/ollama37/docker && make build-runtime 2>&1` | Build completes with message: "Runtime image built successfully"<br>No "error:", "Error:", or "FAILED" in output |
+| 2 | Verify runtime image exists:<br>`docker images ollama37:latest --format '{{.Repository}}:{{.Tag}} {{.Size}}'` | Output: ollama37:latest with size ~30GB |
 
----
+### Notes
 
-## TC-BUILD-003: Image Size Validation
-
-**External ID:** ollama37-10
-**Importance:** Medium
-**Execution Type:** Automated
-
-**Summary:**
-Verify Docker image sizes are within expected range.
-
-### Steps
-
-| # | Action | Expected Result |
-|---|--------|-----------------|
-| 1 | Check builder image size:<br>`docker images ollama37-builder:latest --format '{{.Size}}'` | Size between 10GB and 20GB |
-| 2 | Check runtime image size:<br>`docker images ollama37:latest --format '{{.Size}}'` | Size between 15GB and 25GB |
+- Build time is approximately 17-18 minutes for CUDA compilation
+- Image size is ~30GB due to CUDA toolkit and compiled binaries

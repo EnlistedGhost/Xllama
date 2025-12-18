@@ -5,7 +5,7 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { hostname } from 'os';
 import path from 'path';
-import { TestResult, TestReport, TestSummary, Judgment } from '../types.js';
+import { TestResult, TestReport, TestSummary, Judgment, StepReportEntry } from '../types.js';
 
 export class JsonReporter {
   private outputDir: string;
@@ -50,6 +50,17 @@ export class JsonReporter {
       // Both must pass in dual mode
       const pass = simple.pass && llm.pass;
 
+      // Convert StepResult[] to StepReportEntry[]
+      const steps: StepReportEntry[] = result.steps.map((step) => ({
+        name: step.name,
+        command: step.command,
+        exitCode: step.exitCode,
+        duration: step.duration,
+        stdout: step.stdout,
+        stderr: step.stderr,
+        pass: step.exitCode === 0,
+      }));
+
       return {
         testId: result.testCase.id,
         name: result.testCase.name,
@@ -59,7 +70,7 @@ export class JsonReporter {
           ? 'Both judges passed'
           : `Simple: ${simple.reason}; LLM: ${llm.reason}`,
         duration: result.totalDuration,
-        logs: result.logs,
+        steps,
         logFile: result.logFile,
         simpleJudge: simple,
         llmJudge: llm,
@@ -127,6 +138,7 @@ export class JsonReporter {
         pass: r.pass,
         reason: r.reason,
         duration: r.duration,
+        steps: r.steps,
         simpleJudge: r.simpleJudge,
         llmJudge: r.llmJudge,
       })),

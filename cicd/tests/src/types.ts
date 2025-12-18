@@ -116,6 +116,26 @@ export interface Judgment {
 // ============================================
 
 /**
+ * Structured step result for JSON output.
+ */
+export interface StepReportEntry {
+  /** Step name */
+  name: string;
+  /** Command executed */
+  command: string;
+  /** Exit code */
+  exitCode: number;
+  /** Duration in ms */
+  duration: number;
+  /** Captured stdout */
+  stdout: string;
+  /** Captured stderr */
+  stderr: string;
+  /** Whether step passed */
+  pass: boolean;
+}
+
+/**
  * Complete report for a single test.
  */
 export interface TestReport {
@@ -131,8 +151,8 @@ export interface TestReport {
   reason: string;
   /** Execution duration in ms */
   duration: number;
-  /** Extracted logs */
-  logs: string;
+  /** Structured step results */
+  steps: StepReportEntry[];
   /** Path to full log file */
   logFile: string;
   /** Simple judge verdict */
