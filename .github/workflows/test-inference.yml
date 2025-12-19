@@ -100,4 +100,6 @@ jobs:
         if: always()
         with:
           name: inference-test-results
-          path: /tmp/inference-results.json
+          path: |
+            /tmp/inference-results.json
+            cicd/results/

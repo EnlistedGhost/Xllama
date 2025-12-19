@@ -90,4 +90,6 @@ jobs:
         if: always()
         with:
           name: runtime-test-results
-          path: /tmp/runtime-results.json
+          path: |
+            /tmp/runtime-results.json
+            cicd/results/

@@ -93,4 +93,6 @@ jobs:
         if: always()
         with:
           name: build-test-results
-          path: /tmp/build-results.json
+          path: |
+            /tmp/build-results.json
+            cicd/results/

@@ -265,7 +265,7 @@ ${r.stderr || '(empty)'}
     // Build tests don't need it (direct stdout capture)
     // Runtime/inference tests need docker log capture
     const needsLogCollector = testCases.some(
-      (tc) => tc.suite === 'runtime' || tc.suite === 'inference'
+      (tc) => tc.suite === 'runtime' || tc.suite === 'inference' || tc.suite === 'models'
     );
 
     if (needsLogCollector) {

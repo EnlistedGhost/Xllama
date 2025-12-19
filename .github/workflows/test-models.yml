@@ -97,4 +97,6 @@ jobs:
         if: always()
         with:
           name: models-test-results
-          path: /tmp/models-results.json
+          path: |
+            /tmp/models-results.json
+            cicd/results/
