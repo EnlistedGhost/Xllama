@@ -42,9 +42,10 @@ TypeScript-based test framework with dual-judge architecture.
 **Test Suites:**
 | Suite | Tests | Purpose |
 |-------|-------|---------|
-| Build | 3 | Verify Docker images and toolchain |
+| Build | 2 | Verify Docker images and toolchain |
 | Runtime | 3 | Container startup, GPU detection |
-| Inference | 3 | Model loading, API endpoints |
+| Inference | 2 | Model loading, API endpoints |
+| Models | 3 | Large model testing (gpt-oss, gemma3:27b, deepseek-r1) |
 
 ### LLM Judge (`infrastructure/docker-compose.judge.yml`)
 
@@ -69,6 +70,23 @@ curl -X POST http://localhost:11435/api/pull -d '{"name": "gemma3:4b"}'
 docker compose -f docker-compose.judge.yml down
 ```
 
+## GitHub Actions Workflows
+
+Located in `.github/workflows/`:
+
+| Workflow | Description |
+|----------|-------------|
+| `test-pipeline.yml` | Full pipeline: build → runtime → inference → models |
+| `test-build.yml` | Build verification only |
+| `test-runtime.yml` | Runtime tests only |
+| `test-inference.yml` | Inference tests only |
+| `test-models.yml` | Models test (TC-MODELS-001 only) |
+
+**Usage:**
+- Trigger manually via GitHub Actions "Run workflow"
+- Pipeline runs all suites in sequence
+- Individual workflows assume container is already running
+
 ## Folder Structure
 
 ```
@@ -82,7 +100,8 @@ cicd/
 ├── specs/
 │   ├── build.md             # Build test specifications
 │   ├── runtime.md           # Runtime test specifications
-│   └── inference.md         # Inference test specifications
+│   ├── inference.md         # Inference test specifications
+│   └── models.md            # Models test specifications
 ├── tests/
 │   ├── src/                 # Framework source code
 │   ├── testcases/           # YAML test definitions

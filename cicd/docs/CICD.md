@@ -139,13 +139,15 @@ sed -n '/===TEST:TC-RUNTIME-001:START:/,${/===TEST:/d;p}' /tmp/ollama37-session-
 
 ### Test Architecture
 
-Tests are organized into three suites that must run in order:
+Tests are organized into four suites that must run in order:
 
-**Build Suite**: Verifies Docker images exist and are correctly configured. No GPU required.
+**Build Suite** (2 tests): Verifies Docker images exist and are correctly configured. No GPU required.
 
-**Runtime Suite**: Starts the container and verifies GPU detection. Checks that Ollama recognizes K80 hardware and loads CUDA libraries. Critical validation that the driver/toolkit/container integration works.
+**Runtime Suite** (3 tests): Starts the container and verifies GPU detection. Checks that Ollama recognizes K80 hardware and loads CUDA libraries. Critical validation that the driver/toolkit/container integration works.
 
-**Inference Suite**: Actually runs models of increasing size. The 4B model tests basic functionality, 12B tests single-GPU capacity, and 27B tests multi-GPU layer splitting. Each model size unloads after testing to free VRAM for the next.
+**Inference Suite** (2 tests): Tests model loading and API inference with gemma3:4b. Validates that models load correctly and generate responses using GPU.
+
+**Models Suite** (3 tests): Tests large models on K80 hardware - gpt-oss:20b, gemma3:27b, and deepseek-r1:14b. Each model size unloads after testing to free VRAM for the next.
 
 ### Model Unload Strategy
 
@@ -214,14 +216,34 @@ cicd/
 │   │       ├── json.ts
 │   │       └── console.ts
 │   ├── testcases/
-│   │   ├── build/           # TC-BUILD-001, 002, 003
+│   │   ├── build/           # TC-BUILD-001, 002
 │   │   ├── runtime/         # TC-RUNTIME-001, 002, 003
-│   │   └── inference/       # TC-INFERENCE-001, 002, 003
+│   │   ├── inference/       # TC-INFERENCE-001, 002
+│   │   └── models/          # TC-MODELS-001, 002, 003
 │   ├── package.json
 │   └── tsconfig.json
 ├── results/                 # Test output (gitignored)
 └── README.md                # Quick start guide
 ```
+
+## GitHub Actions Integration
+
+The test framework integrates with GitHub Actions via reusable workflows in `.github/workflows/`:
+
+**Pipeline Workflow** (`test-pipeline.yml`):
+Runs all test suites in sequence: build → runtime → inference → models. This is the primary workflow for full validation.
+
+**Individual Workflows**:
+- `test-build.yml` - Build verification only
+- `test-runtime.yml` - Runtime tests only
+- `test-inference.yml` - Inference tests only
+- `test-models.yml` - Models test (TC-MODELS-001 only)
+
+**Design Notes**:
+- Individual workflows do not manage container lifecycle
+- Container must be running before runtime/inference/models tests
+- Pipeline workflow orchestrates the sequence via `needs:` dependencies
+- All workflows run on self-hosted runners with K80 hardware
 
 ## Quick Start
 

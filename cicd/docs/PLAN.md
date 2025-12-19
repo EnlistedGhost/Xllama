@@ -8,9 +8,10 @@ Based on analysis of test cases and existing documentation.
 
 | Suite | Test Cases | Requirements |
 |-------|------------|--------------|
-| Build | 3 | Docker images, build toolchain |
+| Build | 2 | Docker images, build toolchain |
 | Runtime | 3 | GPU passthrough, container health |
-| Inference | 3 | Model download, GPU inference, API |
+| Inference | 2 | Model download, GPU inference, API |
+| Models | 3 | Large model testing on K80 |
 
 ---
 
@@ -162,7 +163,8 @@ cicd/
 ├── specs/
 │   ├── build.md                   # Build test specifications
 │   ├── runtime.md                 # Runtime test specifications
-│   └── inference.md               # Inference test specifications
+│   ├── inference.md               # Inference test specifications
+│   └── models.md                  # Models test specifications
 ├── tests/                         # Test framework (v2)
 │   ├── src/
 │   │   ├── cli.ts                 # CLI entry point
@@ -177,9 +179,10 @@ cicd/
 │   │       ├── json.ts            # JSON output
 │   │       └── console.ts         # Terminal output
 │   ├── testcases/
-│   │   ├── build/                 # TC-BUILD-001, 002, 003
+│   │   ├── build/                 # TC-BUILD-001, 002
 │   │   ├── runtime/               # TC-RUNTIME-001, 002, 003
-│   │   └── inference/             # TC-INFERENCE-001, 002, 003
+│   │   ├── inference/             # TC-INFERENCE-001, 002
+│   │   └── models/                # TC-MODELS-001, 002, 003
 │   ├── package.json
 │   └── tsconfig.json
 ├── results/                       # Test output (gitignored)
@@ -212,10 +215,10 @@ cicd/
 - [x] Implement CLI
 
 ### Phase 4: Integration
-- [x] Test suite execution order (Build → Runtime → Inference)
+- [x] Test suite execution order (Build → Runtime → Inference → Models)
 - [x] Model unload after inference tests
 - [x] Result reporting to `cicd/results/`
-- [ ] CI/CD pipeline integration (GitHub Actions)
+- [x] CI/CD pipeline integration (GitHub Actions)
 
 ---
 
