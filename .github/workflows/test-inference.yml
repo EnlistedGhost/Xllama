@@ -3,14 +3,6 @@ name: Inference Tests
 on:
   workflow_dispatch:
     inputs:
-      use_existing_container:
-        description: "Use existing running container"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
       judge_mode:
         description: "Test judge mode"
         required: false
@@ -26,11 +18,6 @@ on:
         type: string
   workflow_call:
     inputs:
-      use_existing_container:
-        description: "Container is already running"
-        required: false
-        default: false
-        type: boolean
       judge_mode:
         description: "Test judge mode (simple, dual)"
         required: false
@@ -68,14 +55,6 @@ jobs:
 
       - name: Install test runner dependencies
         run: cd cicd/tests && npm ci
-
-      - name: Start container (if needed)
-        if: ${{ inputs.use_existing_container != 'true' && inputs.use_existing_container != true }}
-        run: |
-          cd docker
-          docker compose down 2>/dev/null || true
-          docker compose up -d
-          sleep 10
 
       - name: Run inference tests
         id: inference-tests
@@ -122,10 +101,3 @@ jobs:
         with:
           name: inference-test-results
           path: /tmp/inference-results.json
-
-      - name: Stop container (if we started it)
-        if: ${{ always() && inputs.use_existing_container != 'true' && inputs.use_existing_container != true }}
-        run: |
-          cd docker
-          docker compose down || true
-          echo "Container stopped"

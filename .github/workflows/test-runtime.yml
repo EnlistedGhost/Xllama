@@ -3,14 +3,6 @@ name: Runtime Tests
 on:
   workflow_dispatch:
     inputs:
-      keep_container:
-        description: "Keep container running after tests"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
       judge_mode:
         description: "Test judge mode"
         required: false
@@ -26,11 +18,6 @@ on:
         type: string
   workflow_call:
     inputs:
-      keep_container:
-        description: "Keep container running for subsequent jobs"
-        required: false
-        default: false
-        type: boolean
       judge_mode:
         description: "Test judge mode (simple, dual)"
         required: false
@@ -65,13 +52,6 @@ jobs:
 
       - name: Install test runner dependencies
         run: cd cicd/tests && npm ci
-
-      - name: Start container
-        run: |
-          cd docker
-          docker compose down 2>/dev/null || true
-          docker compose up -d
-          sleep 10
 
       - name: Run runtime tests
         id: runtime-tests
@@ -111,10 +91,3 @@ jobs:
         with:
           name: runtime-test-results
           path: /tmp/runtime-results.json
-
-      - name: Stop container
-        if: ${{ inputs.keep_container != 'true' && inputs.keep_container != true }}
-        run: |
-          cd docker
-          docker compose down || true
-          echo "Container stopped"
