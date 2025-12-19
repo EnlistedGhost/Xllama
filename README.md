@@ -2,6 +2,19 @@
 
 **Two-stage Docker build for Ollama with CUDA 11.4 and Compute Capability 3.7 support (Tesla K80)**
 
+## Demo Video
+
+[![Why I Run AI on 10-Year-Old GPUs](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=VIDEO_ID)
+
+**[Why I Run AI on 10-Year-Old GPUs: Ollama K80 Docker Build System & CI/CD Pipeline](https://www.youtube.com/watch?v=VIDEO_ID)**
+
+In this video, I walk through our modern AI CI/CD pipeline built entirely on legacy Nvidia K80 GPUs. Why use old hardware in 2025? Because the hands-on challenges teach you skills you'd never learn otherwise—compiling kernels, managing GCC versions, debugging driver issues, and navigating end-of-life software dependencies.
+
+**Highlights:**
+- **Docker Build System**: Two-stage build with Rocky Linux 8, CUDA 11.4, GCC 10, CMake 4.0, Go 1.25.3
+- **CI/CD & Test Framework**: Self-hosted GitHub Actions runner with Simple Judge (exit code/pattern matching) and LLM Judge (Gemma3 12B for log analysis)
+- **Full Pipeline**: Build → Container check → Runtime verification → Inference testing → Model compatibility testing
+
 ## Overview
 
 This Docker build system uses a two-stage architecture to build and run Ollama with Tesla K80 (compute capability 3.7) support:
