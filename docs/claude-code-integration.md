@@ -75,17 +75,19 @@ This persists the context setting into the model — no environment variable nee
 | Context | GPU Layers | Processor | Total Memory | Notes |
 |---------|------------|-----------|--------------|-------|
 | 4k (default) | 25/25 | 100% GPU | ~16 GiB | Full GPU offload |
+| 32k (Modelfile) | 25/25 | 100% GPU | ~23 GiB | Full GPU offload |
 | 64k (Modelfile) | 15/25 | GPU + CPU | ~47.9 GiB | 10 layers spill to CPU |
 
 ## Conclusion: gpt-oss:20b + 64k is Too Large for 4x K80
 
 The 20B model with 64k context exceeds what 4x Tesla K80 (44.8 GiB total VRAM) can handle efficiently — 10/25 layers spill to CPU, severely degrading inference speed. Two approaches to explore:
 
-### Approach 1: Same model, smaller context — gpt-oss:20b with 32k
+### Approach 1: Same model, smaller context — gpt-oss:20b with 32k (Tested)
 
 - Keep the 20B model for quality, halve the context window
-- 32k context should roughly halve the compute graph (~16 GiB vs ~33 GiB)
-- May allow all 25 layers on GPU (100% GPU offload)
+- **Result: 100% GPU offload, 25/25 layers on GPU, 23 GB total**
+- Compute graph halved (~16 GiB vs ~33 GiB) — the dominant memory consumer at 64k
+- No CPU spill eliminates the CPU-GPU transfer overhead
 - Trade-off: Claude Code works better with larger context, 32k may be tight for complex tasks
 
 ```bash
@@ -105,12 +107,15 @@ Candidate models to test:
 - `qwen3-coder:14b`
 - `glm-4.7:9b`
 
+### Why 32k vs 64k Is Such a Big Difference
+
+The **compute graph** dominates memory at large context lengths (70% of total at 64k). It scales linearly with context, so halving context roughly halves the biggest memory consumer. At 64k the compute graph alone (~33 GiB) exceeds total GPU VRAM (44.8 GiB), forcing layer spill to CPU. At 32k (~16 GiB), everything fits comfortably.
+
 ### Next Steps
 
-Test both approaches and compare:
-1. `ollama ps` — verify GPU layer count and processor split
-2. Inference speed — tokens/sec for prompt evaluation and generation
-3. Claude Code usability — does 32k context cause issues in practice?
+1. Test Claude Code usability with 32k context — does it cause issues in practice?
+2. Test approach 2 (smaller model + 64k) if 32k proves too limiting
+3. Compare inference speed between configurations
 
 ## Launching Claude Code with Ollama
 
@@ -123,7 +128,7 @@ docker compose up -d
 ANTHROPIC_AUTH_TOKEN=ollama \
 ANTHROPIC_API_KEY="" \
 ANTHROPIC_BASE_URL=http://localhost:11434 \
-claude --model gpt-oss:20b-64k
+claude --model gpt-oss:20b-32k
 ```
 
 ## Diagnostic Commands
