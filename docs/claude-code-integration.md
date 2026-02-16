@@ -154,16 +154,63 @@ The **compute graph** dominates memory at large context lengths (70% of total at
 
 **Root cause**: Claude Code sends a very large system prompt with every request via `/v1/messages`. The prompt processing (prefill) step is compute-bound, and on K80 hardware (no Tensor Cores, GDDR5 memory bandwidth) this dominates total response time. A 5x smaller model (4B vs 20B) showed no improvement — both took ~4 minutes because the bottleneck is system prompt prefill, not model size.
 
-### Conclusion: Tesla K80 Is Not Suitable for Claude Code
+### Test 3: gemma3:4b-32k — Rejected (No Tool Support)
 
-| Model | Params | Direct Ollama | Via Claude Code | Result |
-|-------|--------|---------------|-----------------|--------|
-| gpt-oss:20b-32k | 20.9B | ~30-60s | ~4 min | Working but very slow |
-| qwen3:4b-32k | 4B | ~15-25s | >3 min (timeout) | Failed |
+**Date**: 2026-02-16
 
-**Key finding**: The bottleneck is not model size — it's Claude Code's large system prompt being processed on slow hardware. K80 GPUs (2014, no Tensor Cores, ~480 GB/s GDDR5) are ~10-20x slower at prompt prefill than modern GPUs. Even a 4B model cannot respond within a reasonable timeout.
+**Setup**: Claude Code CLI (Docker) -> Ollama (`/v1/messages` Anthropic API) -> gemma3:4b-32k on 4x Tesla K80
 
-**Recommendation**: K80 GPUs work well for direct Ollama inference (`/api/generate`, `/api/chat`). For Claude Code specifically, which requires fast processing of large system prompts on every request, newer GPUs with Tensor Cores (Volta or later, compute >= 7.0) are needed.
+**Direct Ollama query** (no Claude Code): ~1.6 seconds warm, 90ms prompt eval — very fast.
+
+**Via Claude Code**: Immediately rejected with API error:
+
+```
+API Error: 400 {"type":"error","error":{"type":"invalid_request_error",
+"message":"registry.ollama.ai/library/gemma3:4b-32k does not support tools"}}
+```
+
+**Root cause**: Claude Code requires tool-calling support (for file operations, bash execution, etc.). gemma3:4b does not have tool-calling in its model template. This is a compatibility issue, not a performance issue — the model is fast but fundamentally incompatible with Claude Code.
+
+**Note**: Only models with tool-calling support work with Claude Code. The [Ollama blog](https://ollama.com/blog/claude-code) recommends: qwen3-coder, glm-4.7, gpt-oss.
+
+### Test 4: llama3.2:3b-32k — Working (With Bug Fix)
+
+**Date**: 2026-02-16
+
+**Setup**: Claude Code CLI (Docker) -> Ollama (`/v1/messages` Anthropic API) -> llama3.2:3b-32k on 4x Tesla K80
+
+**Direct Ollama query** (no Claude Code): ~1.1 seconds warm, 53ms prompt eval.
+
+**Via Claude Code (first attempt)**: Failed with `tool_use block missing required 'id' field`. Ollama's tool parsers don't generate tool call IDs, and the Anthropic `/v1/messages` layer was passing empty IDs through. Fixed by generating `toolu_XXXX` IDs in `anthropic/anthropic.go`, mirroring what the OpenAI layer already does with `call_XXXX`.
+
+**Via Claude Code (after fix, model pre-loaded)**:
+
+```
+[GIN] 2026/02/16 - 14:54:47 | 200 |         2m16s | POST     "/v1/messages?beta=true"
+[GIN] 2026/02/16 - 14:55:05 | 200 |  18.61122293s | POST     "/v1/messages?beta=true"
+```
+
+- First request (system prompt prefill): **2m16s**
+- Second request (actual query): **18.6s**
+- Both returned **200** — tool_use ID fix confirmed working
+
+**Note**: llama3.2:3b is a small model (3.2B params) that responds well through Claude Code once the system prompt is cached. The ~2 min initial prefill is a one-time cost per conversation. Subsequent requests take ~19s which is usable for simple tasks.
+
+### Conclusion: Tesla K80 Claude Code Compatibility
+
+| Model | Params | Tool Support | Direct Ollama | Via Claude Code | Result |
+|-------|--------|-------------|---------------|-----------------|--------|
+| gpt-oss:20b-32k | 20.9B | Yes | ~30-60s | ~4 min | Working but very slow |
+| qwen3:4b-32k | 4B | Yes | ~15-25s | >3 min (timeout) | Failed |
+| gemma3:4b-32k | 4.3B | **No** | ~1.6s | Rejected | Incompatible |
+| llama3.2:3b-32k | 3.2B | Yes | ~1.1s | 2m16s + 19s/req | Working |
+
+**Key findings**:
+1. **Performance**: The bottleneck is Claude Code's large system prompt prefill. On K80 GPUs (no Tensor Cores, GDDR5), this takes ~2 min even for a 3B model. Subsequent requests are faster (~19s) once the system prompt is processed.
+2. **Compatibility**: Not all models work with Claude Code — tool-calling support is required. gemma3 lacks this. llama3.2 has tool support but needed a bug fix for missing tool_use IDs in the Anthropic API layer.
+3. **Bug fix**: Ollama's tool parsers don't generate tool call IDs. The OpenAI compatibility layer already worked around this (`call_XXXX`), but the Anthropic layer did not. Fixed by generating `toolu_XXXX` IDs in both streaming and non-streaming response paths.
+
+**Recommendation**: llama3.2:3b-32k is the best option for Claude Code on K80 — small enough for fast inference, has tool support, and works after the ID fix. Expect ~2 min for the first response (system prompt prefill) and ~19s for subsequent responses.
 
 ## Launching Claude Code with Ollama
 

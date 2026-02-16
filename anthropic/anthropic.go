@@ -14,6 +14,15 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
+// toolUseID generates a unique tool use ID in Anthropic format (toolu_XXXX).
+// Ollama's tool parsers don't generate IDs, so we create them here to match
+// the Anthropic API contract. Mirrors the OpenAI layer's call_XXXX approach.
+func toolUseID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return "toolu_" + base64.RawURLEncoding.EncodeToString(b)
+}
+
 // Error types matching Anthropic API
 type Error struct {
 	Type    string `json:"type"`
@@ -471,9 +480,13 @@ func ToMessagesResponse(id string, r api.ChatResponse) MessagesResponse {
 	}
 
 	for _, tc := range r.Message.ToolCalls {
+		id := tc.ID
+		if id == "" {
+			id = toolUseID()
+		}
 		content = append(content, ContentBlock{
 			Type:  "tool_use",
-			ID:    tc.ID,
+			ID:    id,
 			Name:  tc.Function.Name,
 			Input: tc.Function.Arguments,
 		})
@@ -525,7 +538,8 @@ type StreamConverter struct {
 	thinkingStarted bool
 	thinkingDone    bool
 	textStarted     bool
-	toolCallsSent   map[string]bool
+	toolCallsSent map[int]bool // keyed by tool call index
+	toolCallIDs   map[int]string // generated IDs for tool calls without one
 }
 
 func NewStreamConverter(id, model string) *StreamConverter {
@@ -533,7 +547,8 @@ func NewStreamConverter(id, model string) *StreamConverter {
 		ID:            id,
 		Model:         model,
 		firstWrite:    true,
-		toolCallsSent: make(map[string]bool),
+		toolCallsSent: make(map[int]bool),
+		toolCallIDs:   make(map[int]string),
 	}
 }
 
@@ -640,9 +655,20 @@ func (c *StreamConverter) Process(r api.ChatResponse) []StreamEvent {
 		})
 	}
 
-	for _, tc := range r.Message.ToolCalls {
-		if c.toolCallsSent[tc.ID] {
+	for i, tc := range r.Message.ToolCalls {
+		if c.toolCallsSent[i] {
 			continue
+		}
+
+		// Get or generate a stable ID for this tool call
+		tcID := tc.ID
+		if tcID == "" {
+			if existing, ok := c.toolCallIDs[i]; ok {
+				tcID = existing
+			} else {
+				tcID = toolUseID()
+				c.toolCallIDs[i] = tcID
+			}
 		}
 
 		if c.textStarted {
@@ -659,7 +685,7 @@ func (c *StreamConverter) Process(r api.ChatResponse) []StreamEvent {
 
 		argsJSON, err := json.Marshal(tc.Function.Arguments)
 		if err != nil {
-			slog.Error("failed to marshal tool arguments", "error", err, "tool_id", tc.ID)
+			slog.Error("failed to marshal tool arguments", "error", err, "tool_id", tcID)
 			continue
 		}
 
@@ -670,7 +696,7 @@ func (c *StreamConverter) Process(r api.ChatResponse) []StreamEvent {
 				Index: c.contentIndex,
 				ContentBlock: ContentBlock{
 					Type:  "tool_use",
-					ID:    tc.ID,
+					ID:    tcID,
 					Name:  tc.Function.Name,
 					Input: map[string]any{},
 				},
@@ -697,7 +723,7 @@ func (c *StreamConverter) Process(r api.ChatResponse) []StreamEvent {
 			},
 		})
 
-		c.toolCallsSent[tc.ID] = true
+		c.toolCallsSent[i] = true
 		c.contentIndex++
 	}
 
