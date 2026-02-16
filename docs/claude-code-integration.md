@@ -136,6 +136,35 @@ The **compute graph** dominates memory at large context lengths (70% of total at
 
 **Status**: Working end-to-end. Claude Code successfully communicates with Ollama via the Anthropic Messages API (`/v1/messages`). Response time is ~4 minutes for a simple greeting due to K80 inference speed.
 
+### Test 2: qwen3:4b-32k — Small Model Fails Under Claude Code
+
+**Date**: 2026-02-16
+
+**Setup**: Claude Code CLI (Docker) -> Ollama (`/v1/messages` Anthropic API) -> qwen3:4b-32k on 4x Tesla K80
+
+**Direct Ollama query** (no Claude Code): ~15-25 seconds per response — fast and functional.
+
+**Via Claude Code**: Timed out after 3 minutes with no response. Ollama logs show the `/v1/messages` request took **4m17s** before being killed.
+
+```
+[GIN] 2026/02/16 - 13:03:38 | 200 |         4m17s |      172.22.0.3 | POST     "/v1/messages?beta=true"
+```
+
+**GPU stats during test**: Max temperature 78°C (under 83°C safety limit), model fully loaded in VRAM (9.99 GiB).
+
+**Root cause**: Claude Code sends a very large system prompt with every request via `/v1/messages`. The prompt processing (prefill) step is compute-bound, and on K80 hardware (no Tensor Cores, GDDR5 memory bandwidth) this dominates total response time. A 5x smaller model (4B vs 20B) showed no improvement — both took ~4 minutes because the bottleneck is system prompt prefill, not model size.
+
+### Conclusion: Tesla K80 Is Not Suitable for Claude Code
+
+| Model | Params | Direct Ollama | Via Claude Code | Result |
+|-------|--------|---------------|-----------------|--------|
+| gpt-oss:20b-32k | 20.9B | ~30-60s | ~4 min | Working but very slow |
+| qwen3:4b-32k | 4B | ~15-25s | >3 min (timeout) | Failed |
+
+**Key finding**: The bottleneck is not model size — it's Claude Code's large system prompt being processed on slow hardware. K80 GPUs (2014, no Tensor Cores, ~480 GB/s GDDR5) are ~10-20x slower at prompt prefill than modern GPUs. Even a 4B model cannot respond within a reasonable timeout.
+
+**Recommendation**: K80 GPUs work well for direct Ollama inference (`/api/generate`, `/api/chat`). For Claude Code specifically, which requires fast processing of large system prompts on every request, newer GPUs with Tensor Cores (Volta or later, compute >= 7.0) are needed.
+
 ## Launching Claude Code with Ollama
 
 ```bash
