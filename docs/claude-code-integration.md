@@ -117,6 +117,25 @@ The **compute graph** dominates memory at large context lengths (70% of total at
 2. Test approach 2 (smaller model + 64k) if 32k proves too limiting
 3. Compare inference speed between configurations
 
+## Test Results
+
+**Date**: 2026-02-16
+
+**Setup**: Claude Code CLI -> Ollama (`/v1/messages` Anthropic API) -> gpt-oss:20b-32k on 4x Tesla K80
+
+```
+❯ hi
+
+● Hello! How can I help you today?
+
+✻ Sautéed for 3m 53s
+
+❯ /model
+  ⎿  Kept model as gpt-oss:20b-32k
+```
+
+**Status**: Working end-to-end. Claude Code successfully communicates with Ollama via the Anthropic Messages API (`/v1/messages`). Response time is ~4 minutes for a simple greeting due to K80 inference speed.
+
 ## Launching Claude Code with Ollama
 
 ```bash
