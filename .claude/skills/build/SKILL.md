@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build ollama37 from source (native or Docker container)
+description: Provides step-by-step build instructions for ollama37. Use when you need to compile the binary from source (native build) or build a Docker runtime image.
 disable-model-invocation: true
 argument-hint: [native|docker]
 ---

@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Debug and logging options for ollama37. Use when troubleshooting GPU issues, CUBLAS errors, or runtime problems on Tesla K80 or other GPUs.
+description: Shows environment variables and commands for debugging ollama37. Use when troubleshooting server startup failures, GPU detection issues, CUBLAS errors, or runtime problems.
 ---
 
 # Debug and Logging Options

@@ -44,7 +44,8 @@ RUN cmake --install build --component CPU --strip \
 # VCS info is embedded automatically since we cloned from git
 # Set version via -ldflags - pass OLLAMA_VERSION as build arg
 ARG OLLAMA_VERSION
-RUN go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o dist/bin/ollama .
+RUN mkdir -p dist/bin \
+    && go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o dist/bin/ollama .
 
 # === RUNTIME STAGE ===
 # Slim base image with only runtime dependencies

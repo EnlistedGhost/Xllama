@@ -57,8 +57,7 @@ Use the GitHub Actions workflows to build and test on a self-hosted runner that 
 
 ## Skills Reference
 
-Detailed technical knowledge is organized into project skills at `.claude/skills/`:
+Project skills at `.claude/skills/`:
 
-- **`cuda-compat`** - K80 CUBLAS compatibility, CUDA version constraints, CPU architecture details (auto-loaded when relevant)
-- **`/build`** - Native and Docker build instructions (invoke with `/build`)
-- **`/debug`** - Debug logging options and troubleshooting (invoke with `/debug`)
+- **`/build`** - Step-by-step build instructions for native and Docker builds
+- **`/debug`** - Environment variables and commands for debugging and troubleshooting

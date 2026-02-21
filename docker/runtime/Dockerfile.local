@@ -47,7 +47,8 @@ RUN cmake --install build --component CPU --strip \
 # Build Go binary
 # Set version via -ldflags - pass OLLAMA_VERSION as build arg
 ARG OLLAMA_VERSION
-RUN go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o dist/bin/ollama .
+RUN mkdir -p dist/bin \
+    && go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o dist/bin/ollama .
 
 # === RUNTIME STAGE ===
 # Slim base image with only runtime dependencies
