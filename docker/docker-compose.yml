@@ -20,7 +20,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/usr/local/bin/ollama", "list"]
+      test: ["CMD", "/usr/bin/ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3

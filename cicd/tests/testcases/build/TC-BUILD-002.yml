@@ -8,7 +8,7 @@ dependencies:
 
 steps:
   - name: Navigate and build runtime image
-    command: cd /home/jack/src/ollama37/docker && OLLAMA_VERSION=${OLLAMA_VERSION:-0.0.0} make build-runtime 2>&1
+    command: cd /home/jack/src/ollama37/docker && OLLAMA_VERSION=${OLLAMA_VERSION:-0.0.0} make build-runtime-local 2>&1
     timeout: 1800000
     expectPatterns:
       - "Runtime image built successfully"
@@ -28,6 +28,6 @@ criteria: |
   - Build completes without errors
   - Final message: "Runtime image built successfully!"
   - Runtime image exists (ollama37:latest)
-  - Image size approximately 30GB
+  - Image size approximately 1.5GB (multi-stage build)
 
   Note: Build time is approximately 17-18 minutes for CUDA compilation.

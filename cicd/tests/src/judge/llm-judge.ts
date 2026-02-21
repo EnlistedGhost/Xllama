@@ -147,7 +147,7 @@ Respond ONLY with the JSON array, no other text.`;
         stream: false,
         options: {
           temperature: 0.1,
-          num_predict: 1000,
+          num_predict: 2048,
         },
       },
       {
