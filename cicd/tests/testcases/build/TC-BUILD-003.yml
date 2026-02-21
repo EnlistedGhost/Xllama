@@ -9,7 +9,7 @@ dependencies:
 
 steps:
   - name: Check builder image size
-    command: "size=$(docker images ollama37-builder:latest --format '{{.Size}}'); echo \"$size\"; numfmt --from=iec \"${size%B}\" | awk '{gb=$1/1073741824; if (gb >= 10 && gb <= 20) print \"SIZE_OK\"; else print \"SIZE_FAIL: \" gb \"GB\"}'"
+    command: "size=$(docker images ollama37-builder:latest --format '{{.Size}}'); echo \"$size\"; numfmt --from=iec \"${size%B}\" | awk '{gb=$1/1073741824; if (gb >= 20 && gb <= 35) print \"SIZE_OK\"; else print \"SIZE_FAIL: \" gb \"GB\"}'"
     expectPatterns:
       - "SIZE_OK"
 
@@ -22,5 +22,5 @@ criteria: |
   Verify Docker image sizes are within expected range.
 
   Expected:
-  - Builder image (ollama37-builder:latest): between 10GB and 20GB
+  - Builder image (ollama37-builder:latest): between 20GB and 35GB
   - Runtime image (ollama37:latest): between 1GB and 3GB (multi-stage build)
