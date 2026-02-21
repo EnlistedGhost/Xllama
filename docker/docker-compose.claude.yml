@@ -1,0 +1,27 @@
+services:
+  claude-code:
+    build:
+      context: ./claude
+    image: ollama37-claude-code:latest
+    container_name: ollama37-claude-code
+    stdin_open: true
+    tty: true
+    environment:
+      - ANTHROPIC_AUTH_TOKEN=ollama
+      - ANTHROPIC_API_KEY=
+      - ANTHROPIC_BASE_URL=http://ollama37:11434
+      - ANTHROPIC_MODEL=gpt-oss:20b-32k
+      - DISABLE_AUTOUPDATER=1
+    volumes:
+      - claude-code-config:/home/claude/.claude
+    networks:
+      - ollama-network
+
+networks:
+  ollama-network:
+    external: true
+    name: docker_default
+
+volumes:
+  claude-code-config:
+    name: claude-code-config

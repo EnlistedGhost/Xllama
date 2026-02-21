@@ -1585,6 +1585,9 @@ func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	r.GET("/v1/models", middleware.ListMiddleware(), s.ListHandler)
 	r.GET("/v1/models/:model", middleware.RetrieveMiddleware(), s.ShowHandler)
 
+	// Inference (Anthropic compatibility)
+	r.POST("/v1/messages", middleware.AnthropicMessagesMiddleware(), s.ChatHandler)
+
 	if rc != nil {
 		// wrap old with new
 		rs := &registry.Local{
