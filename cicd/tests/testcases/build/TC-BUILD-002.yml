@@ -28,6 +28,6 @@ criteria: |
   - Build completes without errors
   - Final message: "Runtime image built successfully!"
   - Runtime image exists (ollama37:latest)
-  - Image size approximately 30GB
+  - Image size approximately 1.5GB (multi-stage build)
 
   Note: Build time is approximately 17-18 minutes for CUDA compilation.
