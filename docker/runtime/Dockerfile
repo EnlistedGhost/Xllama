@@ -1,14 +1,16 @@
 # Ollama37 Runtime Image
-# Single-stage build: compiles and packages the binary in one image
-# The runtime needs access to the build directory for GGML CUDA libraries
-# This ensures the compiled binary can find all required runtime libraries at:
-#   /usr/local/src/ollama37/build/lib/ollama
+# Multi-stage build: compiles in builder image, copies only runtime artifacts to slim image
+#
+# Image size: ~800 MB - 1.5 GB (vs ~8-12 GB for single-stage builder image)
+# The runtime image contains only: ollama binary, GGML/CUDA libraries, CUDA runtime
+# libs, and GCC 10 runtime libs. No compilers, build tools, or source code.
 
-# Base image: ollama37-builder contains GCC 10, CUDA 11.4, and build tools
-FROM ollama37-builder
+# === BUILD STAGE ===
+# Builder image: ollama37-builder contains GCC 10, CUDA 11.4, and build tools
+FROM ollama37-builder AS builder
 
 # Clone ollama37 source code from GitHub
-RUN cd /usr/local/src\
+RUN cd /usr/local/src \
     && git clone https://github.com/dogkeeper886/ollama37.git
 
 # Set working directory for build
@@ -29,25 +31,52 @@ RUN bash -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$LD_LIBR
     CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ \
     cmake --build build -j$(nproc)'
 
+# Install compiled libraries to dist/ directory
+# cmake --install collects runtime artifacts and their dependencies:
+#   CPU component: ggml-base.so, ggml-cpu*.so variants
+#   CUDA component: ggml-cuda.so + bundled CUDA runtime libs (cublas, cublasLt, cudart)
+# --strip removes debug symbols to reduce library sizes
+# Install destination is controlled by CMakePresets.json installDir: ${sourceDir}/dist
+RUN cmake --install build --component CPU --strip \
+    && cmake --install build --component CUDA --strip
+
 # Build Go binary
 # VCS info is embedded automatically since we cloned from git
-# Build to source directory so binary can find libraries via relative path
 # Set version via -ldflags - pass OLLAMA_VERSION as build arg
 ARG OLLAMA_VERSION
-RUN go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o ./ollama .
+RUN go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o dist/bin/ollama .
 
-# Create symlink to standard binary location
-# The code in ml/path.go uses filepath.EvalSymlinks() which resolves this symlink
-# to /usr/local/src/ollama37/ollama, allowing it to find libraries at build/lib/ollama
-RUN ln -s /usr/local/src/ollama37/ollama /usr/local/bin/ollama
+# === RUNTIME STAGE ===
+# Slim base image with only runtime dependencies
+# RockyLinux 8 minimal: same OS family as builder, glibc-compatible
+FROM rockylinux/rockylinux:8-minimal
 
-# Setup library paths for runtime
-# The binary expects libraries in these exact paths:
-#   /usr/local/src/ollama37/build/lib/ollama - Ollama CUDA/GGML libraries
-#   /usr/local/lib64 - GCC 10 runtime libraries (libstdc++, libgcc_s)
-#   /usr/local/cuda-11.4/lib64 - CUDA 11.4 runtime libraries
-#   /usr/lib64 - System libraries
-ENV LD_LIBRARY_PATH=/usr/local/src/ollama37/build/lib/ollama:/usr/local/lib64:/usr/local/cuda-11.4/lib64:/usr/lib64
+# Install minimal runtime dependencies
+RUN microdnf install -y ca-certificates && microdnf clean all
+
+# Copy the ollama binary
+# Placed at /usr/bin/ollama so ml/path.go resolves libs at ../lib/ollama = /usr/lib/ollama
+COPY --from=builder /usr/local/src/ollama37/dist/bin/ollama /usr/bin/ollama
+
+# Copy compiled GGML/CUDA libraries (includes bundled CUDA runtime libs)
+# cmake --install already collected: ggml-base.so, ggml-cpu*.so, ggml-cuda.so,
+# libcublas.so, libcublasLt.so, libcudart.so
+COPY --from=builder /usr/local/src/ollama37/dist/lib/ollama /usr/lib/ollama
+
+# Copy GCC 10 runtime libraries from the builder
+# These are custom-built in the builder (not system packages) and required by all compiled .so files
+# RockyLinux 8 minimal only has GCC 8's libstdc++ which lacks GLIBCXX symbols from GCC 10
+COPY --from=builder /usr/local/lib64/libstdc++.so* /usr/lib64/
+COPY --from=builder /usr/local/lib64/libgcc_s.so* /usr/lib64/
+
+# Library search paths:
+#   /usr/lib/ollama - GGML/CUDA .so files and bundled CUDA runtime libs
+#   /usr/local/nvidia/lib{64} - NVIDIA container runtime driver mount
+ENV LD_LIBRARY_PATH=/usr/lib/ollama:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+# NVIDIA container runtime configuration
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV NVIDIA_VISIBLE_DEVICES=all
 
 # Configure Ollama server to listen on all interfaces
 ENV OLLAMA_HOST=0.0.0.0:11434
@@ -64,9 +93,8 @@ VOLUME ["/root/.ollama"]
 # Uses 'ollama list' command to check if the service is responsive
 # This validates both API availability and model registry access
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD /usr/local/bin/ollama list || exit 1
+    CMD /usr/bin/ollama list || exit 1
 
-# Set entrypoint and default command
 # Container runs 'ollama serve' by default to start the API server
-ENTRYPOINT ["/usr/local/bin/ollama"]
+ENTRYPOINT ["/usr/bin/ollama"]
 CMD ["serve"]
