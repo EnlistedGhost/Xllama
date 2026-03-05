@@ -1,19 +1,10 @@
----
-name: build
-description: Provides step-by-step build instructions for ollama37. Use when you need to compile the binary from source (native build) or build a Docker runtime image.
-disable-model-invocation: true
-argument-hint: [native|docker]
----
+Guide the user through building ollama37. Reference `.claude/skills/build.md` for context.
 
-# Build Ollama37
+If the user specifies "native", show the native build steps.
+If the user specifies "docker", show the Docker container build steps.
+If no argument is given, ask which build type they need.
 
-## Environment
-- GCC version: 10.5
-- CUDA version: 11.4.4
-- NVIDIA driver: 470
-- Target GPU: Tesla K80 (compute capability 3.7)
-
-## Native Build from Scratch
+## Native Build Steps
 
 ```bash
 # Clean any previous build artifacts
@@ -35,9 +26,7 @@ OLLAMA_VERSION="2.0.1"
 go build -ldflags "-X github.com/ollama/ollama/version.Version=${OLLAMA_VERSION}" -o ollama .
 ```
 
-## Docker Container Build
-
-Most code changes that affect the compiled binary or CUDA libraries require a Docker container rebuild to verify. The runtime Dockerfiles use multi-stage builds: compile in the builder image, copy only runtime artifacts (~1 GB) to a slim RockyLinux 8 minimal image.
+## Docker Build Steps
 
 ### Local source (for testing uncommitted changes)
 
@@ -68,9 +57,3 @@ make build-runtime-no-cache
 cd docker
 make build
 ```
-
-**Build times:**
-- Builder image: ~90 min (first time), cached thereafter
-- Runtime image: ~10 min
-
-See `docker/README.md` for full Docker documentation.

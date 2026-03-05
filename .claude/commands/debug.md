@@ -1,13 +1,6 @@
----
-name: debug
-description: Shows environment variables and commands for debugging ollama37. Use when troubleshooting server startup failures, GPU detection issues, CUBLAS errors, or runtime problems.
----
+Help the user debug ollama37. Reference `.claude/skills/debug.md` for context.
 
-# Debug and Logging Options
-
-## Environment Variables
-- `OLLAMA_DEBUG=1` - Enable verbose Ollama server logging
-- `GGML_CUDA_DEBUG=1` - Enable detailed CUDA/CUBLAS operation logging (batched matrix multiplication)
+Show the relevant commands based on the user's issue.
 
 ## Running with Debug Logging
 
@@ -59,9 +52,3 @@ docker exec ollama37 ls /usr/lib/ollama/
 # Check Docker compose logs
 docker compose logs -f
 ```
-
-## When to Use GGML_CUDA_DEBUG
-- Debugging CUBLAS errors on Tesla K80 or other legacy GPUs
-- Verifying compute capability detection
-- Troubleshooting batched matrix multiplication issues
-- Understanding which CUBLAS functions are being used (legacy vs Ex variants)
