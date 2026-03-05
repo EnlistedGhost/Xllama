@@ -3408,6 +3408,21 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
                         layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
+
+                    // skip vision (v.*) and multi-token prediction (mtp.*) tensors — text-only inference
+                    {
+                        int n_skip = 0;
+                        for (const auto & kv : ml.weights_map) {
+                            const auto & name = kv.first;
+                            if (name.compare(0, 2, "v.") == 0 || name.compare(0, 4, "mtp.") == 0) {
+                                n_skip++;
+                            }
+                        }
+                        if (n_skip > 0) {
+                            LLAMA_LOG_INFO("%s: skipping %d vision/mtp tensors\n", __func__, n_skip);
+                            ml.n_tensors -= n_skip;
+                        }
+                    }
                 } break;
             case LLM_ARCH_PHI2:
                 {
