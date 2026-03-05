@@ -1017,7 +1017,8 @@ void llama_model::load_hparams(llama_model_loader & ml) {
         case LLM_ARCH_QWEN35:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
-                ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS, hparams.rope_sections, 4, true);
+                // qwen3.5 has 3 rope sections (not 4 like qwen2vl); pad 4th with 0
+                ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS, hparams.rope_sections, 3, true);
 
                 // SSM parameters for DeltaNet layers
                 ml.get_key(LLM_KV_SSM_CONV_KERNEL,    hparams.ssm_d_conv);
