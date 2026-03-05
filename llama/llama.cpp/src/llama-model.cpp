@@ -12247,7 +12247,7 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                         d_state, head_dim, n_head_ssm, mctx_cur->get_size());
 
                 // ssm_a is stored as {n_v_heads, 1} in GGUF but ggml_ssm_scan needs {1, n_head}
-                ggml_tensor * A = ggml_reshape_2d(ctx0, layer.ssm_a, 1, n_head_ssm);
+                ggml_tensor * A = ggml_cont(ctx0, ggml_reshape_2d(ctx0, layer.ssm_a, 1, n_head_ssm));
 
                 auto get_ssm_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
                     ggml_tensor * ssm_reshaped = ggml_reshape_4d(ctx, states,
