@@ -12207,21 +12207,18 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                     qkv = ggml_silu(ctx0, qkv);
                 }
 
-                // split conv output into Q, K, V
-                // Q: [key_dim, n_seq_tokens, n_seqs]
-                // K: [key_dim, n_seq_tokens, n_seqs]
-                // V: [value_dim, n_seq_tokens, n_seqs]
-                ggml_tensor * Q = ggml_view_3d(ctx0, qkv,
+                // split conv output into Q, K, V (cont needed for views with offset)
+                ggml_tensor * Q = ggml_cont(ctx0, ggml_view_3d(ctx0, qkv,
                         key_dim, n_seq_tokens, n_seqs,
-                        qkv->nb[1], qkv->nb[2], 0);
-                ggml_tensor * K = ggml_view_3d(ctx0, qkv,
+                        qkv->nb[1], qkv->nb[2], 0));
+                ggml_tensor * K = ggml_cont(ctx0, ggml_view_3d(ctx0, qkv,
                         key_dim, n_seq_tokens, n_seqs,
                         qkv->nb[1], qkv->nb[2],
-                        key_dim * ggml_element_size(qkv));
-                ggml_tensor * V = ggml_view_3d(ctx0, qkv,
+                        key_dim * ggml_element_size(qkv)));
+                ggml_tensor * V = ggml_cont(ctx0, ggml_view_3d(ctx0, qkv,
                         value_dim, n_seq_tokens, n_seqs,
                         qkv->nb[1], qkv->nb[2],
-                        2 * key_dim * ggml_element_size(qkv));
+                        2 * key_dim * ggml_element_size(qkv)));
 
                 // reshape to per-head
                 Q = ggml_reshape_4d(ctx0, Q, d_state, n_group, n_seq_tokens, n_seqs);
@@ -12229,8 +12226,8 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                 V = ggml_reshape_4d(ctx0, V, head_dim, n_head_ssm, n_seq_tokens, n_seqs);
 
                 // apply beta as per-head gate on V: V_gated = V * beta
-                // beta: {n_v_heads, n_seq_tokens, n_seqs} -> broadcast over head_dim
-                beta = ggml_reshape_3d(ctx0, beta, n_head_ssm, n_seq_tokens, n_seqs);
+                // beta: {1, n_v_heads, n_seq_tokens, n_seqs} broadcasts over head_dim
+                beta = ggml_reshape_4d(ctx0, beta, 1, n_head_ssm, n_seq_tokens, n_seqs);
                 V = ggml_mul(ctx0, V, beta);
                 cb(V, "V_gated", il);
 
