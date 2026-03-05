@@ -1014,6 +1014,33 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                     default: type = LLM_TYPE_UNKNOWN;
                 }
             } break;
+        case LLM_ARCH_QWEN35:
+            {
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+                ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS, hparams.rope_sections, 4, true);
+
+                // SSM parameters for DeltaNet layers
+                ml.get_key(LLM_KV_SSM_CONV_KERNEL,    hparams.ssm_d_conv);
+                ml.get_key(LLM_KV_SSM_INNER_SIZE,     hparams.ssm_d_inner);
+                ml.get_key(LLM_KV_SSM_STATE_SIZE,     hparams.ssm_d_state);
+                ml.get_key(LLM_KV_SSM_TIME_STEP_RANK, hparams.ssm_dt_rank);
+                ml.get_key(LLM_KV_SSM_GROUP_COUNT,    hparams.ssm_n_group);
+
+                // hybrid layer pattern: every Nth layer is full attention, rest are DeltaNet
+                uint32_t full_attn_interval = 4;
+                ml.get_key(LLM_KV_FULL_ATTENTION_INTERVAL, full_attn_interval, false);
+
+                // mark recurrent (DeltaNet) vs attention layers
+                for (uint32_t i = 0; i < hparams.n_layer; ++i) {
+                    // full attention layers are at positions where (i % interval) == (interval - 1)
+                    hparams.recurrent_layer_arr[i] = ((i + 1) % full_attn_interval != 0);
+                }
+
+                switch (hparams.n_layer) {
+                    case 24: type = LLM_TYPE_2B; break;
+                    default: type = LLM_TYPE_UNKNOWN;
+                }
+            } break;
         case LLM_ARCH_PHI2:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_EPS, hparams.f_norm_eps);
@@ -3314,6 +3341,66 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {  n_embd, n_ff_exp, n_expert}, 0);
                         layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {n_ff_exp,   n_embd, n_expert}, 0);
                         layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {  n_embd, n_ff_exp, n_expert}, 0);
+                    }
+                } break;
+            case LLM_ARCH_QWEN35:
+                {
+                    // DeltaNet SSM dimension calculations
+                    const int64_t ssm_d_state   = hparams.ssm_d_state;
+                    const int64_t ssm_d_conv    = hparams.ssm_d_conv;
+                    const int64_t ssm_d_inner   = hparams.ssm_d_inner;
+                    const int64_t ssm_dt_rank   = hparams.ssm_dt_rank;
+                    const int64_t ssm_n_group   = hparams.ssm_n_group;
+                    const int64_t head_k_dim    = ssm_d_state;
+                    const int64_t head_v_dim    = ssm_d_state;
+                    const int64_t n_k_heads     = ssm_n_group;
+                    const int64_t n_v_heads     = ssm_dt_rank;
+                    const int64_t key_dim       = head_k_dim * n_k_heads;
+                    const int64_t value_dim     = head_v_dim * n_v_heads;
+                    // conv processes Q, K, and V (like B and C in Mamba2)
+                    const int64_t conv_dim      = key_dim * 2 + value_dim;
+
+                    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+
+                    // output
+                    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+                    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
+                    if (output == NULL) {
+                        output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
+                    }
+
+                    for (int i = 0; i < n_layer; ++i) {
+                        auto & layer = layers[i];
+
+                        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+
+                        if (hparams.recurrent_layer_arr[i]) {
+                            // linear attention (DeltaNet) layer
+                            layer.wqkv      = create_tensor(tn(LLM_TENSOR_ATTN_QKV,      "weight", i), {n_embd, conv_dim}, 0);
+                            layer.wqkv_gate = create_tensor(tn(LLM_TENSOR_ATTN_QKV_GATE,  "weight", i), {n_embd, ssm_d_inner}, 0);
+                            layer.ssm_conv1d   = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {ssm_d_conv, conv_dim}, 0);
+                            layer.ssm_dt_b     = create_tensor(tn(LLM_TENSOR_SSM_DT,       "bias", i), {n_v_heads}, 0);
+                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,                 i), {1, n_v_heads}, 0);
+                            layer.ssm_beta     = create_tensor(tn(LLM_TENSOR_SSM_BETA,    "weight", i), {n_embd, key_dim}, 0);
+                            layer.ssm_alpha    = create_tensor(tn(LLM_TENSOR_SSM_ALPHA,   "weight", i), {n_embd, n_v_heads}, 0);
+                            layer.ssm_norm     = create_tensor(tn(LLM_TENSOR_SSM_NORM,    "weight", i), {ssm_d_inner / ssm_n_group, ssm_n_group}, TENSOR_NOT_REQUIRED);
+                            layer.ssm_out      = create_tensor(tn(LLM_TENSOR_SSM_OUT,     "weight", i), {ssm_d_inner, n_embd}, 0);
+                        } else {
+                            // full attention layer
+                            // wq has size n_embd_head_k * n_head * 2 (joint Q + gate)
+                            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd_head_k * n_head * 2}, 0);
+                            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_gqa}, 0);
+                            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_gqa}, 0);
+                            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, 0);
+                            layer.attn_q_norm = create_tensor(tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), {n_embd_head_k}, 0);
+                            layer.attn_k_norm = create_tensor(tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), {n_embd_head_k}, 0);
+                        }
+
+                        // dense FFN for all layers
+                        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+                        layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0);
+                        layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+                        layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
                 } break;
             case LLM_ARCH_PHI2:
@@ -9496,6 +9583,290 @@ struct llm_build_qwen3moe : public llm_graph_context {
                         il);
             cb(moe_out, "ffn_moe_out", il);
             cur = moe_out;
+
+            cur = ggml_add(ctx0, cur, ffn_inp);
+
+            cur = build_cvec(cur, il);
+            cb(cur, "l_out", il);
+
+            // input for next layer
+            inpL = cur;
+        }
+
+        cur = inpL;
+
+        cur = build_norm(cur,
+                model.output_norm, NULL,
+                LLM_NORM_RMS, -1);
+
+        cb(cur, "result_norm", -1);
+        res->t_embd = cur;
+
+        // lm_head
+        cur = build_lora_mm(model.output, cur);
+
+        cb(cur, "result_output", -1);
+        res->t_logits = cur;
+
+        ggml_build_forward_expand(gf, cur);
+    }
+};
+
+// Qwen3.5: hybrid Gated DeltaNet + standard attention architecture
+// Uses ggml_ssm_scan for the DeltaNet linear attention recurrence
+// (structurally matches Mamba2 scan: S_t = exp(decay)*S_{t-1} + B_t*x_t, y_t = C_t*S_t)
+struct llm_build_qwen35 : public llm_graph_context_mamba {
+    llm_build_qwen35(const llama_model & model, const llm_graph_params & params) : llm_graph_context_mamba(params) {
+        const int64_t n_embd_head = hparams.n_embd_head_v;
+
+        // DeltaNet dimensions
+        const int64_t d_conv    = hparams.ssm_d_conv;
+        const int64_t d_inner   = hparams.ssm_d_inner;   // = n_v_heads * head_v_dim
+        const int64_t d_state   = hparams.ssm_d_state;   // = head_k_dim = head_v_dim
+        const int64_t n_head_ssm = hparams.ssm_dt_rank;  // n_v_heads
+        const int64_t n_group   = hparams.ssm_n_group;   // n_k_heads
+        const int64_t head_dim  = d_inner / n_head_ssm;   // = d_state (head_v_dim)
+        const int64_t key_dim   = d_state * n_group;
+        const int64_t value_dim = d_state * n_head_ssm;
+        const int64_t conv_dim  = key_dim * 2 + value_dim;
+
+        ggml_tensor * cur;
+        ggml_tensor * inpL;
+
+        inpL = build_inp_embd(model.tok_embd);
+
+        // inp_pos - contains the positions
+        ggml_tensor * inp_pos = build_inp_pos();
+
+        // hybrid memory: KV cache for attention + recurrent state for DeltaNet
+        auto * inp = build_inp_mem_hybrid();
+
+        int sections[4];
+        std::copy(std::begin(hparams.rope_sections), std::begin(hparams.rope_sections) + 4, sections);
+
+        ggml_tensor * inp_out_ids = build_inp_out_ids();
+
+        for (int il = 0; il < n_layer; ++il) {
+            ggml_tensor * inpSA = inpL;
+
+            // norm
+            cur = build_norm(inpL,
+                    model.layers[il].attn_norm, NULL,
+                    LLM_NORM_RMS, il);
+            cb(cur, "attn_norm", il);
+
+            if (hparams.is_recurrent(il)) {
+                // === DeltaNet linear attention layer ===
+                const auto & layer = model.layers[il];
+                const auto * mctx_cur = inp->get_recr()->mctx;
+                const auto kv_head = mctx_cur->get_head();
+                const int64_t n_seqs = ubatch.n_seqs;
+                const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+
+                GGML_ASSERT(n_seqs != 0);
+                GGML_ASSERT(ubatch.equal_seqs());
+                GGML_ASSERT(ubatch.n_tokens == n_seq_tokens * n_seqs);
+
+                // get recurrent states
+                ggml_tensor * conv_states_all = mctx_cur->get_r_l(il);
+                ggml_tensor * ssm_states_all  = mctx_cur->get_s_l(il);
+
+                ggml_tensor * conv = build_rs(inp->get_recr(), conv_states_all, hparams.n_embd_r(), n_seqs);
+                conv = ggml_reshape_3d(ctx0, conv, d_conv - 1, conv_dim, n_seqs);
+
+                // {n_embd, n_tokens} => {n_embd, n_seq_tokens, n_seqs}
+                cur = ggml_reshape_3d(ctx0, cur, cur->ne[0], n_seq_tokens, n_seqs);
+
+                // projections from input (before conv)
+                // gate z: {n_embd, d_inner}
+                ggml_tensor * z = build_lora_mm(layer.wqkv_gate, cur);
+                cb(z, "ssm_z", il);
+
+                // alpha (decay): {n_embd, n_v_heads}
+                ggml_tensor * alpha = build_lora_mm(layer.ssm_alpha, cur);
+                // add dt bias
+                alpha = ggml_add(ctx0, alpha, layer.ssm_dt_b);
+                cb(alpha, "ssm_alpha", il);
+
+                // beta (update gate for K): {n_embd, key_dim}
+                ggml_tensor * beta = build_lora_mm(layer.ssm_beta, cur);
+                cb(beta, "ssm_beta", il);
+
+                // QKV projection -> conv input: {n_embd, conv_dim}
+                ggml_tensor * qkv = build_lora_mm(layer.wqkv, cur);
+                cb(qkv, "ssm_qkv", il);
+
+                // conv1d on QKV
+                {
+                    // concat old conv state with new input
+                    // {d_conv-1 + n_seq_tokens, conv_dim, n_seqs}
+                    ggml_tensor * conv_x = ggml_concat(ctx0, conv, ggml_transpose(ctx0, qkv), 0);
+
+                    // save last (d_conv-1) columns back to state cache
+                    ggml_tensor * last_conv = ggml_view_3d(ctx0, conv_x,
+                            d_conv - 1, conv_dim, n_seqs,
+                            conv_x->nb[1], conv_x->nb[2],
+                            n_seq_tokens * conv_x->nb[0]);
+                    ggml_build_forward_expand(gf,
+                        ggml_cpy(ctx0, last_conv,
+                            ggml_view_1d(ctx0, conv_states_all,
+                                (d_conv - 1) * conv_dim * n_seqs,
+                                kv_head * (d_conv - 1) * conv_dim * ggml_element_size(conv_states_all))));
+
+                    // 1D convolution
+                    qkv = ggml_ssm_conv(ctx0, conv_x, layer.ssm_conv1d);
+                    qkv = ggml_silu(ctx0, qkv);
+                }
+
+                // split conv output into Q, K, V
+                // Q: [key_dim, n_seq_tokens, n_seqs]
+                // K: [key_dim, n_seq_tokens, n_seqs]
+                // V: [value_dim, n_seq_tokens, n_seqs]
+                ggml_tensor * Q = ggml_view_3d(ctx0, qkv,
+                        key_dim, n_seq_tokens, n_seqs,
+                        qkv->nb[1], qkv->nb[2], 0);
+                ggml_tensor * K = ggml_view_3d(ctx0, qkv,
+                        key_dim, n_seq_tokens, n_seqs,
+                        qkv->nb[1], qkv->nb[2],
+                        key_dim * ggml_element_size(qkv));
+                ggml_tensor * V = ggml_view_3d(ctx0, qkv,
+                        value_dim, n_seq_tokens, n_seqs,
+                        qkv->nb[1], qkv->nb[2],
+                        2 * key_dim * ggml_element_size(qkv));
+
+                // apply beta gate to K: K_gated = beta * K
+                K = ggml_mul(ctx0, K, beta);
+                cb(K, "K_gated", il);
+
+                // reshape to per-head: [head_k_dim, n_k_heads, n_seq_tokens, n_seqs]
+                Q = ggml_reshape_4d(ctx0, Q, d_state, n_group, n_seq_tokens, n_seqs);
+                K = ggml_reshape_4d(ctx0, K, d_state, n_group, n_seq_tokens, n_seqs);
+                V = ggml_reshape_4d(ctx0, V, head_dim, n_head_ssm, n_seq_tokens, n_seqs);
+
+                // L2 normalize Q and K
+                Q = ggml_l2_norm(ctx0, Q, 1e-12);
+                cb(Q, "Q_l2", il);
+                K = ggml_l2_norm(ctx0, K, 1e-12);
+                cb(K, "K_l2", il);
+
+                // reshape alpha for scan: [n_v_heads, n_seq_tokens, n_seqs]
+                alpha = ggml_reshape_3d(ctx0, alpha, n_head_ssm, n_seq_tokens, n_seqs);
+
+                // DeltaNet scan via ggml_ssm_scan
+                // The scan computes: S_t = exp(softplus(dt)*A) * S_{t-1} + B_t*x_t, y_t = C_t*S_t
+                // We map: dt=alpha, A=ssm_a, B=K_gated, x=V, C=Q
+                ggml_tensor * ssm = ggml_reshape_4d(ctx0, ssm_states_all,
+                        d_state, head_dim, n_head_ssm, mctx_cur->get_size());
+
+                auto get_ssm_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
+                    ggml_tensor * ssm_reshaped = ggml_reshape_4d(ctx, states,
+                            d_state, head_dim, n_head_ssm, mctx_cur->get_size());
+                    return ggml_ssm_scan(ctx, ssm_reshaped, V, alpha, layer.ssm_a, K, Q, ids);
+                };
+
+                ggml_tensor * y_ssm = build_rs(inp->get_recr(), ssm_states_all, hparams.n_embd_s(), n_seqs, get_ssm_rows);
+
+                // store updated states
+                ggml_build_forward_expand(gf,
+                    ggml_cpy(ctx0,
+                        ggml_view_1d(ctx0, y_ssm, d_state * d_inner * n_seqs, V->nb[3] * V->ne[3]),
+                        ggml_view_1d(ctx0, ssm_states_all, d_state * d_inner * n_seqs,
+                            kv_head * d_state * d_inner * ggml_element_size(ssm_states_all))));
+
+                ggml_tensor * y = ggml_view_3d(ctx0, y_ssm,
+                        d_inner, n_seq_tokens, n_seqs,
+                        V->nb[2], V->nb[3], 0);
+
+                // gated normalization: rms_norm(y) * silu(z)
+                if (layer.ssm_norm) {
+                    y = build_norm(y, layer.ssm_norm, NULL, LLM_NORM_RMS, il);
+                }
+                y = ggml_mul(ctx0, y, ggml_silu(ctx0, z));
+                cb(y, "ssm_gated", il);
+
+                // output projection: {d_inner, n_embd}
+                cur = build_lora_mm(layer.ssm_out, y);
+
+                // {d_inner, n_seq_tokens, n_seqs} => {n_embd, n_tokens}
+                cur = ggml_reshape_2d(ctx0, cur, cur->ne[0], n_seq_tokens * n_seqs);
+            } else {
+                // === Full attention layer (with sigmoid gating) ===
+
+                // Q projection has double size: n_embd_head * n_head * 2 (joint Q + gate)
+                ggml_tensor * Qcur_full = build_lora_mm(model.layers[il].wq, cur);
+                cb(Qcur_full, "Qcur_full", il);
+
+                // split Q and gate
+                const int64_t q_dim = n_embd_head * n_head;
+                ggml_tensor * Qcur = ggml_view_2d(ctx0, Qcur_full,
+                        q_dim, n_tokens,
+                        Qcur_full->nb[1], 0);
+                ggml_tensor * Qgate = ggml_view_2d(ctx0, Qcur_full,
+                        q_dim, n_tokens,
+                        Qcur_full->nb[1],
+                        q_dim * ggml_element_size(Qcur_full));
+
+                ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
+                cb(Kcur, "Kcur", il);
+
+                ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
+                cb(Vcur, "Vcur", il);
+
+                Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
+                Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
+                Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+
+                // Q/K normalization
+                Qcur = build_norm(Qcur, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, il);
+                Kcur = build_norm(Kcur, model.layers[il].attn_k_norm, NULL, LLM_NORM_RMS, il);
+
+                // interleaved multi-resolution RoPE
+                Qcur = ggml_rope_multi(
+                        ctx0, Qcur, inp_pos, nullptr,
+                        n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+                        ext_factor, attn_factor, beta_fast, beta_slow);
+                Kcur = ggml_rope_multi(
+                        ctx0, Kcur, inp_pos, nullptr,
+                        n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+                        ext_factor, attn_factor, beta_fast, beta_slow);
+
+                cb(Qcur, "Qcur", il);
+                cb(Kcur, "Kcur", il);
+                cb(Vcur, "Vcur", il);
+
+                cur = build_attn(inp->get_attn(),
+                        model.layers[il].wo, NULL,
+                        Qcur, Kcur, Vcur, nullptr, nullptr, nullptr,
+                        1.0f/sqrtf(float(n_embd_head)), il);
+
+                // sigmoid gating: output = attn_out * sigmoid(gate)
+                Qgate = ggml_reshape_2d(ctx0, Qgate, q_dim, n_tokens);
+                cur = ggml_mul(ctx0, cur, ggml_sigmoid(ctx0, Qgate));
+                cb(cur, "attn_gated", il);
+            }
+
+            if (il == n_layer - 1 && inp_out_ids) {
+                cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);
+                inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
+            }
+
+            // residual
+            ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
+            cb(ffn_inp, "ffn_inp", il);
+
+            // feed-forward network (dense SwiGLU for all layers)
+            cur = build_norm(ffn_inp,
+                    model.layers[il].ffn_norm, NULL,
+                    LLM_NORM_RMS, il);
+            cb(cur, "ffn_norm", il);
+
+            cur = build_ffn(cur,
+                    model.layers[il].ffn_up,   NULL, NULL,
+                    model.layers[il].ffn_gate, NULL, NULL,
+                    model.layers[il].ffn_down, NULL, NULL,
+                    NULL,
+                    LLM_FFN_SILU, LLM_FFN_PAR, il);
+            cb(cur, "ffn_out", il);
 
             cur = ggml_add(ctx0, cur, ffn_inp);
 
@@ -19814,6 +20185,10 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
             {
                 llm = std::make_unique<llm_build_qwen3moe>(*this, params);
             } break;
+        case LLM_ARCH_QWEN35:
+            {
+                llm = std::make_unique<llm_build_qwen35>(*this, params);
+            } break;
         case LLM_ARCH_PHI2:
             {
                 llm = std::make_unique<llm_build_phi2>(*this, params);
@@ -20325,6 +20700,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
             return LLAMA_ROPE_TYPE_NEOX;
 
         case LLM_ARCH_QWEN2VL:
+        case LLM_ARCH_QWEN35:
             return LLAMA_ROPE_TYPE_MROPE;
 
         // all model arches should be listed explicitly here
