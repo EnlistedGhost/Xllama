@@ -3383,7 +3383,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             layer.ssm_conv1d   = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {ssm_d_conv, conv_dim}, 0);
                             // GGUF: ssm_dt [n_v_heads] (no "bias" suffix), ssm_a [n_v_heads] (1D)
                             layer.ssm_dt_b     = create_tensor(tn(LLM_TENSOR_SSM_DT,              i), {n_v_heads}, 0);
-                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,               i), {1, n_v_heads}, 0);
+                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,               i), {n_v_heads, 1}, 0);
                             // GGUF: ssm_beta [n_embd, n_v_heads], ssm_alpha [n_embd, n_v_heads]
                             layer.ssm_beta     = create_tensor(tn(LLM_TENSOR_SSM_BETA,    "weight", i), {n_embd, n_v_heads}, 0);
                             layer.ssm_alpha    = create_tensor(tn(LLM_TENSOR_SSM_ALPHA,   "weight", i), {n_embd, n_v_heads}, 0);
@@ -12246,10 +12246,13 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                 ggml_tensor * ssm = ggml_reshape_4d(ctx0, ssm_states_all,
                         d_state, head_dim, n_head_ssm, mctx_cur->get_size());
 
+                // ssm_a is stored as {n_v_heads, 1} in GGUF but ggml_ssm_scan needs {1, n_head}
+                ggml_tensor * A = ggml_reshape_2d(ctx0, layer.ssm_a, 1, n_head_ssm);
+
                 auto get_ssm_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
                     ggml_tensor * ssm_reshaped = ggml_reshape_4d(ctx, states,
                             d_state, head_dim, n_head_ssm, mctx_cur->get_size());
-                    return ggml_ssm_scan(ctx, ssm_reshaped, V, alpha, layer.ssm_a, K, Q, ids);
+                    return ggml_ssm_scan(ctx, ssm_reshaped, V, alpha, A, K, Q, ids);
                 };
 
                 ggml_tensor * y_ssm = build_rs(inp->get_recr(), ssm_states_all, hparams.n_embd_s(), n_seqs, get_ssm_rows);
