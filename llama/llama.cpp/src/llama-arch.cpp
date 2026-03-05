@@ -791,7 +791,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ATTN_K_NORM,     "blk.%d.attn_k_norm" },
             // linear attention (DeltaNet) layers
             { LLM_TENSOR_ATTN_QKV,        "blk.%d.attn_qkv" },
-            { LLM_TENSOR_ATTN_QKV_GATE,   "blk.%d.attn_qkv_gate" },
+            { LLM_TENSOR_ATTN_QKV_GATE,   "blk.%d.attn_gate" },
             { LLM_TENSOR_SSM_CONV1D,      "blk.%d.ssm_conv1d" },
             { LLM_TENSOR_SSM_DT,          "blk.%d.ssm_dt" },
             { LLM_TENSOR_SSM_A,           "blk.%d.ssm_a" },
@@ -800,7 +800,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_SSM_NORM,        "blk.%d.ssm_norm" },
             { LLM_TENSOR_SSM_OUT,         "blk.%d.ssm_out" },
             // dense FFN
-            { LLM_TENSOR_FFN_NORM,        "blk.%d.ffn_norm" },
+            { LLM_TENSOR_FFN_NORM,        "blk.%d.post_attention_norm" },
             { LLM_TENSOR_FFN_GATE,        "blk.%d.ffn_gate" },
             { LLM_TENSOR_FFN_DOWN,        "blk.%d.ffn_down" },
             { LLM_TENSOR_FFN_UP,          "blk.%d.ffn_up" },

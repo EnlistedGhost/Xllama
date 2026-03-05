@@ -3377,21 +3377,26 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                         if (hparams.recurrent_layer_arr[i]) {
                             // linear attention (DeltaNet) layer
+                            // GGUF: attn_qkv [n_embd, conv_dim=8192], attn_gate [n_embd, n_embd]
                             layer.wqkv      = create_tensor(tn(LLM_TENSOR_ATTN_QKV,      "weight", i), {n_embd, conv_dim}, 0);
-                            layer.wqkv_gate = create_tensor(tn(LLM_TENSOR_ATTN_QKV_GATE,  "weight", i), {n_embd, ssm_d_inner}, 0);
+                            layer.wqkv_gate = create_tensor(tn(LLM_TENSOR_ATTN_QKV_GATE,  "weight", i), {n_embd, n_embd}, 0);
                             layer.ssm_conv1d   = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {ssm_d_conv, conv_dim}, 0);
-                            layer.ssm_dt_b     = create_tensor(tn(LLM_TENSOR_SSM_DT,       "bias", i), {n_v_heads}, 0);
-                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,                 i), {1, n_v_heads}, 0);
-                            layer.ssm_beta     = create_tensor(tn(LLM_TENSOR_SSM_BETA,    "weight", i), {n_embd, key_dim}, 0);
+                            // GGUF: ssm_dt [n_v_heads] (no "bias" suffix), ssm_a [n_v_heads] (1D)
+                            layer.ssm_dt_b     = create_tensor(tn(LLM_TENSOR_SSM_DT,              i), {n_v_heads}, 0);
+                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,               i), {n_v_heads}, 0);
+                            // GGUF: ssm_beta [n_embd, n_v_heads], ssm_alpha [n_embd, n_v_heads]
+                            layer.ssm_beta     = create_tensor(tn(LLM_TENSOR_SSM_BETA,    "weight", i), {n_embd, n_v_heads}, 0);
                             layer.ssm_alpha    = create_tensor(tn(LLM_TENSOR_SSM_ALPHA,   "weight", i), {n_embd, n_v_heads}, 0);
-                            layer.ssm_norm     = create_tensor(tn(LLM_TENSOR_SSM_NORM,    "weight", i), {ssm_d_inner / ssm_n_group, ssm_n_group}, TENSOR_NOT_REQUIRED);
+                            // GGUF: ssm_norm [d_state=128] (1D)
+                            layer.ssm_norm     = create_tensor(tn(LLM_TENSOR_SSM_NORM,    "weight", i), {ssm_d_state}, TENSOR_NOT_REQUIRED);
                             layer.ssm_out      = create_tensor(tn(LLM_TENSOR_SSM_OUT,     "weight", i), {ssm_d_inner, n_embd}, 0);
                         } else {
-                            // full attention layer
+                            // full attention layer (per-layer n_head_kv from GGUF array)
+                            const int64_t n_embd_gqa_l = hparams.n_embd_v_gqa(i);
                             // wq has size n_embd_head_k * n_head * 2 (joint Q + gate)
                             layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd_head_k * n_head * 2}, 0);
-                            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_gqa}, 0);
-                            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_gqa}, 0);
+                            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_gqa_l}, 0);
+                            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_gqa_l}, 0);
                             layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, 0);
                             layer.attn_q_norm = create_tensor(tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), {n_embd_head_k}, 0);
                             layer.attn_k_norm = create_tensor(tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), {n_embd_head_k}, 0);
@@ -12157,7 +12162,7 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                 alpha = ggml_add(ctx0, alpha, layer.ssm_dt_b);
                 cb(alpha, "ssm_alpha", il);
 
-                // beta (update gate for K): {n_embd, key_dim}
+                // beta (per-head update gate): {n_embd, n_v_heads} -> {n_v_heads, n_seq_tokens, n_seqs}
                 ggml_tensor * beta = build_lora_mm(layer.ssm_beta, cur);
                 cb(beta, "ssm_beta", il);
 
@@ -12203,14 +12208,16 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                         qkv->nb[1], qkv->nb[2],
                         2 * key_dim * ggml_element_size(qkv));
 
-                // apply beta gate to K: K_gated = beta * K
-                K = ggml_mul(ctx0, K, beta);
-                cb(K, "K_gated", il);
-
-                // reshape to per-head: [head_k_dim, n_k_heads, n_seq_tokens, n_seqs]
+                // reshape to per-head
                 Q = ggml_reshape_4d(ctx0, Q, d_state, n_group, n_seq_tokens, n_seqs);
                 K = ggml_reshape_4d(ctx0, K, d_state, n_group, n_seq_tokens, n_seqs);
                 V = ggml_reshape_4d(ctx0, V, head_dim, n_head_ssm, n_seq_tokens, n_seqs);
+
+                // apply beta as per-head gate on V: V_gated = V * beta
+                // beta: {n_v_heads, n_seq_tokens, n_seqs} -> broadcast over head_dim
+                beta = ggml_reshape_3d(ctx0, beta, n_head_ssm, n_seq_tokens, n_seqs);
+                V = ggml_mul(ctx0, V, beta);
+                cb(V, "V_gated", il);
 
                 // L2 normalize Q and K
                 Q = ggml_l2_norm(ctx0, Q, 1e-12);
@@ -12246,9 +12253,11 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                         d_inner, n_seq_tokens, n_seqs,
                         V->nb[2], V->nb[3], 0);
 
-                // gated normalization: rms_norm(y) * silu(z)
+                // grouped RMS norm then gated output: rms_norm(y) * silu(z)
                 if (layer.ssm_norm) {
+                    y = ggml_reshape_4d(ctx0, y, head_dim, n_head_ssm, n_seq_tokens, n_seqs);
                     y = build_norm(y, layer.ssm_norm, NULL, LLM_NORM_RMS, il);
+                    y = ggml_reshape_3d(ctx0, y, d_inner, n_seq_tokens, n_seqs);
                 }
                 y = ggml_mul(ctx0, y, ggml_silu(ctx0, z));
                 cb(y, "ssm_gated", il);
