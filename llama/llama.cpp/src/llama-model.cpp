@@ -12268,20 +12268,24 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                         d_inner, n_seq_tokens, n_seqs,
                         V->nb[2], V->nb[3], 0);
 
-                // grouped RMS norm then gated output: rms_norm(y) * silu(z)
+                // grouped RMS norm then output projection, then gated: silu(z) * o_proj(rms_norm(y))
                 if (layer.ssm_norm) {
                     y = ggml_reshape_4d(ctx0, y, head_dim, n_head_ssm, n_seq_tokens, n_seqs);
                     y = build_norm(y, layer.ssm_norm, NULL, LLM_NORM_RMS, il);
                     y = ggml_reshape_3d(ctx0, y, d_inner, n_seq_tokens, n_seqs);
                 }
-                y = ggml_mul(ctx0, y, ggml_silu(ctx0, z));
-                cb(y, "ssm_gated", il);
 
-                // output projection: {d_inner, n_embd}
+                // output projection: {d_inner, n_embd} first, then gate
                 cur = build_lora_mm(layer.ssm_out, y);
 
                 // {d_inner, n_seq_tokens, n_seqs} => {n_embd, n_tokens}
                 cur = ggml_reshape_2d(ctx0, cur, cur->ne[0], n_seq_tokens * n_seqs);
+
+                // apply gate: cur = cur * silu(z)
+                // z is {n_embd, n_seq_tokens, n_seqs}, reshape to {n_embd, n_tokens}
+                z = ggml_reshape_2d(ctx0, z, z->ne[0], n_seq_tokens * n_seqs);
+                cur = ggml_mul(ctx0, cur, ggml_silu(ctx0, z));
+                cb(cur, "ssm_gated", il);
             } else {
                 // === Full attention layer (with sigmoid gating) ===
 
