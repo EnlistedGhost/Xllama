@@ -3383,7 +3383,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             layer.ssm_conv1d   = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {ssm_d_conv, conv_dim}, 0);
                             // GGUF: ssm_dt [n_v_heads] (no "bias" suffix), ssm_a [n_v_heads] (1D)
                             layer.ssm_dt_b     = create_tensor(tn(LLM_TENSOR_SSM_DT,              i), {n_v_heads}, 0);
-                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,               i), {n_v_heads}, 0);
+                            layer.ssm_a        = create_tensor(tn(LLM_TENSOR_SSM_A,               i), {1, n_v_heads}, 0);
                             // GGUF: ssm_beta [n_embd, n_v_heads], ssm_alpha [n_embd, n_v_heads]
                             layer.ssm_beta     = create_tensor(tn(LLM_TENSOR_SSM_BETA,    "weight", i), {n_embd, n_v_heads}, 0);
                             layer.ssm_alpha    = create_tensor(tn(LLM_TENSOR_SSM_ALPHA,   "weight", i), {n_embd, n_v_heads}, 0);
