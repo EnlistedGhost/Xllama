@@ -16,48 +16,27 @@ This is an Ollama fork adding CUDA compute capability 3.7 support for Tesla K80 
 
 ## Development Process
 
-### Branch Workflow
+### Git Flow
 
-All changes follow a branch-based workflow:
+See `git-flow` skill for the decision framework. In short: code changes use branch flow (branch → PR → merge), docs-only changes can commit directly to `main`.
 
-1. **Create a feature branch** from `main`
-2. **Commit changes** to the branch
-3. **Create a PR** for review
-4. **Review the PR** - verify changes, check build/test results
-5. **Merge to main** after approval
-6. **Delete the branch** after merge
+## Skills and Commands
 
-### Building and Testing
+Skills (`.claude/skills/`) define capabilities and when to use them:
+- **`build`** — Build environment, types, and references
+- **`debug`** — Debug capabilities and environment variables
+- **`ci`** — CI/CD workflows and runner environment
+- **`test`** — Local test framework and test suites
+- **`git-flow`** — Branch flow vs commit-on-main decision
+- **`plan`** — Break down requests into GitHub Issues
+- **`implement`** — Start work on a GitHub Issue
+- **`add-test`** — Add test cases to the test framework
 
-Most code changes that affect the compiled binary or CUDA libraries require a Docker container rebuild to verify.
-
-**Local build (when on a host WITH K80 hardware):**
-```bash
-cd docker
-make build-runtime-local
-```
-
-**GitHub Actions (when on a host WITHOUT K80 hardware):**
-
-Use the GitHub Actions workflows to build and test on a self-hosted runner that has K80 GPU access. This avoids issues where builds on hardware without K80 may not catch GPU-specific problems.
-
-- **Trigger manually**: Go to Actions tab -> select workflow -> "Run workflow"
-- **Available workflows**:
-  - `test-build.yml` - Build verification only
-  - `test-runtime.yml` - Container and runtime tests
-  - `test-inference.yml` - Model inference tests
-  - `test-models.yml` - Model compatibility tests
-  - `test-pipeline.yml` - Full pipeline (build -> runtime -> inference -> models)
-- All workflows run on `self-hosted` runners in the `cicd-1` environment (which has K80 GPUs)
-
-**When to use GitHub Actions vs local build:**
-- Developing on a machine with K80 -> local `make build-runtime-local` is faster
-- Developing on a machine without K80 -> trigger GitHub Actions workflow to build and test on the K80 runner
-- Always run the full test pipeline before merging a PR
-
-## Skills Reference
-
-Project skills at `.claude/skills/`:
-
-- **`/build`** - Step-by-step build instructions for native and Docker builds
-- **`/debug`** - Environment variables and commands for debugging and troubleshooting
+Commands (`.claude/commands/`) are user-invoked slash commands:
+- **`/build`** — Step-by-step native and Docker build instructions
+- **`/debug`** — Debug logging commands for native and Docker
+- **`/ci`** — Trigger and check GitHub Actions workflows
+- **`/test`** — Run test suites locally (build, runtime, inference, models)
+- **`/plan`** — Break down a request into GitHub Issues
+- **`/implement`** — Pick up an issue, create branch, do work, create PR
+- **`/add-test`** — Add a YAML test case and spec entry

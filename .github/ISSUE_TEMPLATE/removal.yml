@@ -1,0 +1,25 @@
+name: Removal
+description: Remove an existing feature or component
+labels: ["removal"]
+body:
+  - type: textarea
+    id: what-to-remove
+    attributes:
+      label: What to Remove
+      description: Describe the feature or component to remove
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Reason
+      description: Why this should be removed
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What breaks, what needs updating, any migration steps
+    validations:
+      required: true

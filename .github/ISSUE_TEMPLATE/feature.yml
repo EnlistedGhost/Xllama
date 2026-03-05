@@ -1,0 +1,38 @@
+name: New Feature
+description: Request a new capability or function
+labels: ["feature"]
+body:
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User Story
+      description: Describe the feature from a user perspective
+      placeholder: "As a [role], I want [capability], so that [benefit]."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: List testable conditions that define "done"
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: technical-notes
+    attributes:
+      label: Technical Notes
+      description: Implementation hints, affected files, or constraints
+    validations:
+      required: false
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other issues this depends on
+      placeholder: "None"
+    validations:
+      required: false
