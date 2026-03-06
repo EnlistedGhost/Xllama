@@ -12293,15 +12293,15 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
                 ggml_tensor * Qcur_full = build_lora_mm(model.layers[il].wq, cur);
                 cb(Qcur_full, "Qcur_full", il);
 
-                // split Q and gate
+                // split Q and gate (cont needed: views have stride 2*q_dim, not q_dim)
                 const int64_t q_dim = n_embd_head * n_head;
-                ggml_tensor * Qcur = ggml_view_2d(ctx0, Qcur_full,
+                ggml_tensor * Qcur = ggml_cont(ctx0, ggml_view_2d(ctx0, Qcur_full,
                         q_dim, n_tokens,
-                        Qcur_full->nb[1], 0);
-                ggml_tensor * Qgate = ggml_view_2d(ctx0, Qcur_full,
+                        Qcur_full->nb[1], 0));
+                ggml_tensor * Qgate = ggml_cont(ctx0, ggml_view_2d(ctx0, Qcur_full,
                         q_dim, n_tokens,
                         Qcur_full->nb[1],
-                        q_dim * ggml_element_size(Qcur_full));
+                        q_dim * ggml_element_size(Qcur_full)));
 
                 ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
                 cb(Kcur, "Kcur", il);
