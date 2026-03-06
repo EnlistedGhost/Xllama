@@ -3803,6 +3803,8 @@ struct ggml_tensor * ggml_solve_tri(
 struct ggml_tensor * ggml_cumsum(
         struct ggml_context * ctx,
         struct ggml_tensor  * a) {
+    GGML_ASSERT(ggml_is_contiguous(a));
+
     struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
 
     result->op     = GGML_OP_CUMSUM;
@@ -3817,6 +3819,8 @@ struct ggml_tensor * ggml_fill(
         struct ggml_context * ctx,
         struct ggml_tensor  * a,
         float                 value) {
+    GGML_ASSERT(ggml_is_contiguous(a));
+
     struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
 
     ggml_set_op_params_f32(result, 0, value);
