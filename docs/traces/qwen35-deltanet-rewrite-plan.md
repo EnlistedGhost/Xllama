@@ -2,18 +2,26 @@
 
 ## Status
 - [x] Phase 1: GGML ops (CPU backends) — committed on `issue-18-deltanet-ggml-ops`
-- [ ] Phase 2: Port delta-net-base graph builder (#20)
-- [ ] Phase 3: Rewrite qwen35.cpp to use DeltaNet builder (#21)
-- [ ] Phase 4: CUDA backends for new ops (#19)
-- [ ] Phase 5: Fix Go-side renderer (#15)
+- [x] Phase 2: Port delta-net-base graph builder (#20) — merged into Phase 2+3
+- [x] Phase 3: Rewrite qwen35.cpp to use DeltaNet builder (#21) — merged into Phase 2+3
+- [x] Phase 5: Fix Go-side renderer (#15) — added qwen3.5 renderer/parser
+- [ ] Phase 4: CUDA backends for new ops (#19) — deferred, CPU-only for now
 
-## Problem
-The current qwen35.cpp uses `ggml_ssm_scan` (Mamba formula) for DeltaNet layers.
-This produces garbage output because the formulas are fundamentally different.
+All work in PR #22. Model produces coherent output on CPU.
+
+### Additional bugs found during implementation
+- Tensor loading mismatch: `attn_post_norm` loaded into `ffn_norm` field
+- Tensor loading mismatch: `ssm_dt` bias loaded into `ssm_dt_b` field
+- Graph context overflow: `graph_max_nodes` too small (3984 vs ~8200 needed)
+  Increased minimum from 1024 to 16384.
+
+## Problem (resolved)
+The original qwen35.cpp used `ggml_ssm_scan` (Mamba formula) for DeltaNet layers.
+This produced garbage output because the formulas are fundamentally different.
 See `docs/traces/qwen35-garbage-output.md` for the full 10-bug analysis.
 
 ## Approach
-Port upstream llama.cpp PR #19468's approach. They do NOT use `ggml_ssm_scan`.
+Ported upstream llama.cpp PR #19468's approach. They do NOT use `ggml_ssm_scan`.
 Instead they use explicit matrix ops via `delta-net-base.cpp`.
 
 ## Phase 2: Port delta-net-base graph builder (#20)
@@ -74,9 +82,10 @@ Check exact location in our fork's structure.
 8. Fix FFN norm tensor: use correct tensor name
 9. Fix Q/gate view: use stride-based `ggml_view_3d` for interleaved Q+gate
 
-### Testing
-- `ollama run qwen3.5` with `raw: true` should produce coherent text
-- Compare token-by-token with upstream llama.cpp output if possible
+### Testing — PASSED
+- `ollama run qwen3.5` produces coherent text (no longer needs `raw: true`)
+- Tested: greetings, factual (capital of France), creative (haiku), math (2+2)
+- Thinking mode (`<think>` tags) works correctly via renderer/parser
 
 ## Phase 4: CUDA backends (#19)
 
@@ -99,18 +108,17 @@ Can defer CUDA kernels and test with CPU-only first.
 The autoregressive path (single token) is fast enough on CPU for testing.
 CUDA needed for practical inference speed.
 
-## Phase 5: Go-side renderer (#15)
+## Phase 5: Go-side renderer (#15) — DONE
 
-The "unknown renderer" error blocks `ollama run qwen3.5` (non-raw mode).
-Need to add qwen3.5 chat template support in the Go layer.
-This is independent of the C++ work and can be done in parallel.
+Added `"qwen3.5"` case to `rendererForName()` and `ParserForName()` in
+`model/renderers/renderer.go` and `model/parsers/parsers.go`.
+Uses `Qwen3VLRenderer` with thinking support enabled.
 
 ## Execution order
 
 ```
-Phase 1 (done) -> Phase 2 -> Phase 3 -> test on CPU -> Phase 4 -> test on GPU
-                                                        Phase 5 (parallel)
+Phase 1 (done) -> Phase 2+3 (done) -> test on CPU (done) -> Phase 4 (deferred)
+                                        Phase 5 (done)
 ```
 
-Single PR when Phase 3 produces coherent output.
-Phase 4 (CUDA) can be a follow-up PR if needed.
+PR #22 created. Phase 4 (CUDA backends) deferred to follow-up issue #19.
