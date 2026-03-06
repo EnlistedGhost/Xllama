@@ -557,6 +557,11 @@ extern "C" {
 
         GGML_OP_GLU,
 
+        GGML_OP_TRI,
+        GGML_OP_SOLVE_TRI,
+        GGML_OP_CUMSUM,
+        GGML_OP_FILL,
+
         GGML_OP_COUNT,
     };
 
@@ -577,6 +582,7 @@ extern "C" {
         GGML_UNARY_OP_EXP,
         GGML_UNARY_OP_GELU_ERF,
         GGML_UNARY_OP_XIELU,
+        GGML_UNARY_OP_SOFTPLUS,
 
         GGML_UNARY_OP_COUNT,
     };
@@ -1163,6 +1169,11 @@ extern "C" {
             float beta,
             float eps);
 
+    // softplus(x) = log(1 + exp(x))
+    GGML_API struct ggml_tensor * ggml_softplus(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
     // gated linear unit ops
     // A: n columns, r rows,
     // result is n / 2 columns, r rows,
@@ -1580,6 +1591,33 @@ extern "C" {
     GGML_API struct ggml_tensor * ggml_diag(
         struct ggml_context     * ctx,
         struct ggml_tensor      * a);
+
+    // generate lower or upper triangular matrix of ones
+    // mode: 0 = lower triangular, 1 = upper triangular
+    GGML_API struct ggml_tensor * ggml_tri(
+            struct ggml_context * ctx,
+            int64_t               n,
+            int                   mode);
+
+    // solve triangular linear system: X = A \ B
+    // a is triangular matrix, b is right-hand side
+    // mode: 0 = lower triangular, 1 = upper triangular
+    GGML_API struct ggml_tensor * ggml_solve_tri(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            struct ggml_tensor  * b,
+            int                   mode);
+
+    // cumulative sum along first dimension
+    GGML_API struct ggml_tensor * ggml_cumsum(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
+    // fill tensor with a scalar value
+    GGML_API struct ggml_tensor * ggml_fill(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            float                 value);
 
     // set elements above the diagonal to -INF
     GGML_API struct ggml_tensor * ggml_diag_mask_inf(

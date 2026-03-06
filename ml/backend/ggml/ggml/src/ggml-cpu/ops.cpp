@@ -4979,6 +4979,261 @@ void ggml_compute_forward_diag(
     }
 }
 
+// ggml_compute_forward_softplus
+
+static void ggml_compute_forward_softplus_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    assert(ggml_is_contiguous_1(src0));
+    assert(ggml_is_contiguous_1(dst));
+    assert(ggml_are_same_shape(src0, dst));
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    const int nc = src0->ne[0];
+    const int nr = ggml_nrows(src0);
+
+    const int dr = (nr + nth - 1)/nth;
+    const int ir0 = dr*ith;
+    const int ir1 = MIN(ir0 + dr, nr);
+
+    for (int i1 = ir0; i1 < ir1; i1++) {
+        const float * s = (const float *) ((const char *) src0->data + i1*(src0->nb[1]));
+        float * d = (float *) ((char *) dst->data + i1*(dst->nb[1]));
+        for (int i0 = 0; i0 < nc; i0++) {
+            d[i0] = (s[i0] > 20.0f) ? s[i0] : logf(1.0f + expf(s[i0]));
+        }
+    }
+}
+
+static void ggml_compute_forward_softplus(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_softplus_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+// ggml_compute_forward_tri
+
+static void ggml_compute_forward_tri_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    if (params->ith != 0) {
+        return;
+    }
+
+    const int64_t n = dst->ne[0];
+    const int mode = ggml_get_op_params_i32(dst, 0);
+
+    for (int64_t i1 = 0; i1 < n; i1++) {
+        float * d = (float *)((char *) dst->data + i1 * dst->nb[1]);
+        if (mode == 0) {
+            // lower triangular
+            for (int64_t i0 = 0; i0 <= i1; i0++) {
+                d[i0] = 1.0f;
+            }
+            for (int64_t i0 = i1 + 1; i0 < n; i0++) {
+                d[i0] = 0.0f;
+            }
+        } else {
+            // upper triangular
+            for (int64_t i0 = 0; i0 < i1; i0++) {
+                d[i0] = 0.0f;
+            }
+            for (int64_t i0 = i1; i0 < n; i0++) {
+                d[i0] = 1.0f;
+            }
+        }
+    }
+}
+
+void ggml_compute_forward_tri(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    switch (dst->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_tri_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+// ggml_compute_forward_solve_tri
+
+static void ggml_compute_forward_solve_tri_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    if (params->ith != 0) {
+        return;
+    }
+
+    const ggml_tensor * src0 = dst->src[0]; // triangular matrix A
+    const ggml_tensor * src1 = dst->src[1]; // right-hand side B
+
+    const int mode = ggml_get_op_params_i32(dst, 0);
+    const int64_t n = src0->ne[0]; // system size
+    const int64_t m = src1->ne[1]; // number of right-hand sides (columns of B)
+
+    // Copy B to dst first
+    const size_t b_size = ggml_nbytes(src1);
+    memcpy(dst->data, src1->data, b_size);
+
+    // For each batch dimension
+    for (int64_t i3 = 0; i3 < dst->ne[3]; i3++) {
+        for (int64_t i2 = 0; i2 < dst->ne[2]; i2++) {
+            if (mode == 0) {
+                // Lower triangular: forward substitution
+                // Solve L * X = B, row by row
+                for (int64_t col = 0; col < m; col++) {
+                    float * x = (float *)((char *) dst->data + i3 * dst->nb[3] + i2 * dst->nb[2] + col * dst->nb[1]);
+                    for (int64_t i = 0; i < n; i++) {
+                        const float * a_row = (const float *)((const char *) src0->data + i3 * src0->nb[3] + i2 * src0->nb[2] + i * src0->nb[1]);
+                        float sum = x[i];
+                        for (int64_t j = 0; j < i; j++) {
+                            sum -= a_row[j] * x[j];
+                        }
+                        x[i] = (a_row[i] != 0.0f) ? sum / a_row[i] : sum;
+                    }
+                }
+            } else {
+                // Upper triangular: back substitution
+                // Solve U * X = B, row by row from bottom
+                for (int64_t col = 0; col < m; col++) {
+                    float * x = (float *)((char *) dst->data + i3 * dst->nb[3] + i2 * dst->nb[2] + col * dst->nb[1]);
+                    for (int64_t i = n - 1; i >= 0; i--) {
+                        const float * a_row = (const float *)((const char *) src0->data + i3 * src0->nb[3] + i2 * src0->nb[2] + i * src0->nb[1]);
+                        float sum = x[i];
+                        for (int64_t j = i + 1; j < n; j++) {
+                            sum -= a_row[j] * x[j];
+                        }
+                        x[i] = (a_row[i] != 0.0f) ? sum / a_row[i] : sum;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void ggml_compute_forward_solve_tri(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_solve_tri_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+// ggml_compute_forward_cumsum
+
+static void ggml_compute_forward_cumsum_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    if (params->ith != 0) {
+        return;
+    }
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    const int64_t nc = src0->ne[0];
+    const int64_t nr = ggml_nrows(src0);
+
+    for (int64_t i1 = 0; i1 < nr; i1++) {
+        const float * s = (const float *)((const char *) src0->data + i1 * src0->nb[1]);
+        float * d = (float *)((char *) dst->data + i1 * dst->nb[1]);
+
+        float sum = 0.0f;
+        for (int64_t i0 = 0; i0 < nc; i0++) {
+            sum += s[i0];
+            d[i0] = sum;
+        }
+    }
+}
+
+void ggml_compute_forward_cumsum(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_cumsum_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
+// ggml_compute_forward_fill
+
+static void ggml_compute_forward_fill_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    if (params->ith != 0) {
+        return;
+    }
+
+    const float value = ggml_get_op_params_f32(dst, 0);
+    const int64_t n = ggml_nelements(dst);
+    float * d = (float *) dst->data;
+
+    for (int64_t i = 0; i < n; i++) {
+        d[i] = value;
+    }
+}
+
+void ggml_compute_forward_fill(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    switch (dst->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_fill_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
 // ggml_compute_forward_diag_mask_inf
 
 static void ggml_compute_forward_diag_mask_f32(
@@ -8673,7 +8928,7 @@ static void ggml_compute_forward_ssm_scan_f32(
                 // n_head
                 for (int h = ih0; h < ih1; ++h) {
                     // ref: https://github.com/state-spaces/mamba/blob/62db608da60f6fc790b8ed9f4b3225e95ca15fde/mamba_ssm/ops/triton/softplus.py#L16
-                    const float dt_soft_plus = ggml_softplus(dt[h]);
+                    const float dt_soft_plus = ggml_softplus_f32(dt[h]);
                     const float dA = expf(dt_soft_plus * A[h]);
                     const int g = h / (nh / ng); // repeat_interleave
 
@@ -8770,7 +9025,7 @@ static void ggml_compute_forward_ssm_scan_f32(
                 // n_head
                 for (int h = ih0; h < ih1; ++h) {
                     // ref: https://github.com/state-spaces/mamba/blob/62db608da60f6fc790b8ed9f4b3225e95ca15fde/mamba_ssm/ops/triton/softplus.py#L16
-                    const float dt_soft_plus = ggml_softplus(dt[h]);
+                    const float dt_soft_plus = ggml_softplus_f32(dt[h]);
                     const int g = h / (nh / ng); // repeat_interleave
 
                     // dim
@@ -9036,6 +9291,10 @@ void ggml_compute_forward_unary(
         case GGML_UNARY_OP_XIELU:
             {
                 ggml_compute_forward_xielu(params, dst);
+            } break;
+        case GGML_UNARY_OP_SOFTPLUS:
+            {
+                ggml_compute_forward_softplus(params, dst);
             } break;
         default:
             {
