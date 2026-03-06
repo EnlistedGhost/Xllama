@@ -12138,6 +12138,9 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
         for (int il = 0; il < n_layer; ++il) {
             ggml_tensor * inpSA = inpL;
 
+            // per-layer n_head_kv (0 for recurrent, >0 for attention)
+            const int64_t n_head_kv = hparams.n_head_kv(il);
+
             // norm
             cur = build_norm(inpL,
                     model.layers[il].attn_norm, NULL,
