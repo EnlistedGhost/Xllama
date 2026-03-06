@@ -4,10 +4,9 @@ description: Add a test case to the ollama37 test framework. Use when a new feat
 argument-hint: <suite> <test-name>
 ---
 
-# Add Test Skill
+# Add Test
 
-## What
-Create a new YAML test case and its spec entry for the ollama37 test framework.
+Create a new YAML test case and its spec entry for the ollama37 test framework. Use `/add-test` to create.
 
 ## When to use
 - After implementing a feature that needs test coverage

@@ -4,10 +4,9 @@ description: Start work on a GitHub Issue. Use when picking up an issue to imple
 argument-hint: <issue-number>
 ---
 
-# Implement Skill
+# Implement
 
-## What
-Pick up a GitHub Issue and start implementation — create a branch, do the work, create a PR that closes the issue.
+Pick up a GitHub Issue and start implementation — create a branch, do the work, create a PR that closes the issue. Use `/implement` to start.
 
 ## When to use
 - After `/plan` has created issues
