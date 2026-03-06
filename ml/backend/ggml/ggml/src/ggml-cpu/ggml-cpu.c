@@ -2265,12 +2265,15 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_TRANSPOSE:
         case GGML_OP_GET_ROWS_BACK:
         case GGML_OP_DIAG:
-        case GGML_OP_TRI:
-        case GGML_OP_SOLVE_TRI:
         case GGML_OP_CUMSUM:
         case GGML_OP_FILL:
             {
                 n_tasks = 1;
+            } break;
+        case GGML_OP_TRI:
+        case GGML_OP_SOLVE_TRI:
+            {
+                n_tasks = n_threads;
             } break;
         case GGML_OP_DIAG_MASK_ZERO:
         case GGML_OP_DIAG_MASK_INF:

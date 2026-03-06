@@ -799,8 +799,9 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_SSM_ALPHA,       "blk.%d.ssm_alpha" },
             { LLM_TENSOR_SSM_NORM,        "blk.%d.ssm_norm" },
             { LLM_TENSOR_SSM_OUT,         "blk.%d.ssm_out" },
+            // post-attention norm (shared between attn output and FFN input)
+            { LLM_TENSOR_ATTN_POST_NORM,  "blk.%d.post_attention_norm" },
             // dense FFN
-            { LLM_TENSOR_FFN_NORM,        "blk.%d.post_attention_norm" },
             { LLM_TENSOR_FFN_GATE,        "blk.%d.ffn_gate" },
             { LLM_TENSOR_FFN_DOWN,        "blk.%d.ffn_down" },
             { LLM_TENSOR_FFN_UP,          "blk.%d.ffn_up" },

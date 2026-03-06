@@ -3754,14 +3754,18 @@ struct ggml_tensor * ggml_diag(
 
 struct ggml_tensor * ggml_tri(
         struct ggml_context * ctx,
-        int64_t               n,
-        int                   mode) {
-    const int64_t ne[4] = { n, n, 1, 1 };
-    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne);
+        struct ggml_tensor  * a,
+        enum ggml_tri_type    type) {
+    GGML_ASSERT(a->type == GGML_TYPE_F32);
+    GGML_ASSERT(ggml_is_contiguous(a));
+    GGML_ASSERT(a->ne[0] == a->ne[1]);
 
-    ggml_set_op_params_i32(result, 0, mode);
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
 
-    result->op = GGML_OP_TRI;
+    ggml_set_op_params_i32(result, 0, type);
+
+    result->op     = GGML_OP_TRI;
+    result->src[0] = a;
 
     return result;
 }
@@ -3772,13 +3776,20 @@ struct ggml_tensor * ggml_solve_tri(
         struct ggml_context * ctx,
         struct ggml_tensor  * a,
         struct ggml_tensor  * b,
-        int                   mode) {
-    GGML_ASSERT(a->ne[0] == a->ne[1]);  // a must be square
-    GGML_ASSERT(a->ne[0] == b->ne[0]);  // dimensions must match
+        bool                  left,
+        bool                  lower,
+        bool                  uni) {
+    GGML_ASSERT(a->type == GGML_TYPE_F32);
+    GGML_ASSERT(b->type == GGML_TYPE_F32);
+    GGML_ASSERT(a->ne[0] == a->ne[1]);
+    GGML_ASSERT(a->ne[1] == b->ne[1]);
+    GGML_ASSERT(a->ne[2] == b->ne[2]);
+    GGML_ASSERT(a->ne[3] == b->ne[3]);
+    GGML_ASSERT(ggml_is_contiguous(a));
+    GGML_ASSERT(ggml_is_contiguous(b));
+    GGML_ASSERT(lower && left && !uni); // TODO: support other variants
 
-    struct ggml_tensor * result = ggml_dup_tensor(ctx, b);
-
-    ggml_set_op_params_i32(result, 0, mode);
+    struct ggml_tensor * result = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, b->ne[0], b->ne[1], b->ne[2], b->ne[3]);
 
     result->op     = GGML_OP_SOLVE_TRI;
     result->src[0] = a;

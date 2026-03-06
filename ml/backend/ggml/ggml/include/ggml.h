@@ -598,6 +598,13 @@ extern "C" {
         GGML_GLU_OP_COUNT,
     };
 
+    enum ggml_tri_type {
+        GGML_TRI_TYPE_UPPER_DIAG = 0,
+        GGML_TRI_TYPE_UPPER      = 1,
+        GGML_TRI_TYPE_LOWER_DIAG = 2,
+        GGML_TRI_TYPE_LOWER      = 3
+    };
+
     enum ggml_object_type {
         GGML_OBJECT_TYPE_TENSOR,
         GGML_OBJECT_TYPE_GRAPH,
@@ -1592,21 +1599,22 @@ extern "C" {
         struct ggml_context     * ctx,
         struct ggml_tensor      * a);
 
-    // generate lower or upper triangular matrix of ones
-    // mode: 0 = lower triangular, 1 = upper triangular
+    // zero out elements based on triangular type
+    // a must be square (ne[0] == ne[1]) and contiguous
     GGML_API struct ggml_tensor * ggml_tri(
             struct ggml_context * ctx,
-            int64_t               n,
-            int                   mode);
+            struct ggml_tensor  * a,
+            enum ggml_tri_type    type);
 
-    // solve triangular linear system: X = A \ B
-    // a is triangular matrix, b is right-hand side
-    // mode: 0 = lower triangular, 1 = upper triangular
+    // solve triangular linear system
+    // currently only supports left=true, lower=true, uni=false
     GGML_API struct ggml_tensor * ggml_solve_tri(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             struct ggml_tensor  * b,
-            int                   mode);
+            bool                  left,
+            bool                  lower,
+            bool                  uni);
 
     // cumulative sum along first dimension
     GGML_API struct ggml_tensor * ggml_cumsum(
