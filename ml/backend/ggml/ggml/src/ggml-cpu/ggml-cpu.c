@@ -1846,6 +1846,22 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_diag(params, tensor);
             } break;
+        case GGML_OP_TRI:
+            {
+                ggml_compute_forward_tri(params, tensor);
+            } break;
+        case GGML_OP_SOLVE_TRI:
+            {
+                ggml_compute_forward_solve_tri(params, tensor);
+            } break;
+        case GGML_OP_CUMSUM:
+            {
+                ggml_compute_forward_cumsum(params, tensor);
+            } break;
+        case GGML_OP_FILL:
+            {
+                ggml_compute_forward_fill(params, tensor);
+            } break;
         case GGML_OP_DIAG_MASK_INF:
             {
                 ggml_compute_forward_diag_mask_inf(params, tensor);
@@ -2195,6 +2211,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
                 case GGML_UNARY_OP_GELU_QUICK:
                 case GGML_UNARY_OP_SILU:
                 case GGML_UNARY_OP_XIELU:
+                case GGML_UNARY_OP_SOFTPLUS:
                     {
                         n_tasks = n_threads;
                     } break;
@@ -2248,8 +2265,15 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_TRANSPOSE:
         case GGML_OP_GET_ROWS_BACK:
         case GGML_OP_DIAG:
+        case GGML_OP_CUMSUM:
+        case GGML_OP_FILL:
             {
                 n_tasks = 1;
+            } break;
+        case GGML_OP_TRI:
+        case GGML_OP_SOLVE_TRI:
+            {
+                n_tasks = n_threads;
             } break;
         case GGML_OP_DIAG_MASK_ZERO:
         case GGML_OP_DIAG_MASK_INF:

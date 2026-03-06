@@ -124,8 +124,30 @@ Upstream implements DeltaNet with explicit matrix ops (`ggml_mul`, `ggml_exp`,
 - Sigmoid gate applied to attention output
 - `wo` applied AFTER gating as separate `build_lora_mm`
 
-## Recommendation
-The DeltaNet implementation needs a substantial rewrite to match upstream.
-This is NOT a minor fix — it requires replacing `ggml_ssm_scan` with custom
-DeltaNet ops and fixing at least 9 other bugs. Consider porting the upstream
-`delta-net-base.cpp` and `qwen35.cpp` directly.
+## Resolution — COMPLETE (PR #22)
+
+All 10 bugs fixed by porting the upstream DeltaNet graph builder from
+llama.cpp PR #19468. The `ggml_ssm_scan` call was completely removed and
+replaced with explicit matrix ops via two paths:
+
+- `build_delta_net_chunking()` — multi-token prefill (64-token chunks)
+- `build_delta_net_autoregressive()` — single-token decode
+
+### Additional bugs found during implementation
+- **Tensor loading mismatch**: `attn_post_norm` weight loaded into `ffn_norm`
+  struct field. Graph builder accessed `attn_post_norm` which was NULL,
+  causing norm to run without weight scaling.
+- **Tensor loading mismatch**: `ssm_dt` bias loaded into `ssm_dt_b` struct
+  field. Graph builder accessed `ssm_dt` which was NULL, causing crash.
+- **Graph context overflow**: `graph_max_nodes = max(1024, 8*498) = 3984`
+  was too small for DeltaNet chunking graph (~8200 tensors). Increased
+  minimum to 16384.
+
+### Issues
+- #18 — Add GGML ops (softplus, cumsum, tri, solve_tri, fill) — DONE
+- #20 — Port delta-net-base graph builder — DONE (merged into #18 branch)
+- #21 — Rewrite qwen35.cpp to use DeltaNet builder — DONE (merged into #18 branch)
+- #15 — Go-side renderer/parser — DONE
+- #19 — CUDA backends for new ops — deferred (CPU-only works)
+
+See `docs/traces/qwen35-deltanet-rewrite-plan.md` for the full execution plan.

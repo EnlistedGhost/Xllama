@@ -557,6 +557,11 @@ extern "C" {
 
         GGML_OP_GLU,
 
+        GGML_OP_TRI,
+        GGML_OP_SOLVE_TRI,
+        GGML_OP_CUMSUM,
+        GGML_OP_FILL,
+
         GGML_OP_COUNT,
     };
 
@@ -577,6 +582,7 @@ extern "C" {
         GGML_UNARY_OP_EXP,
         GGML_UNARY_OP_GELU_ERF,
         GGML_UNARY_OP_XIELU,
+        GGML_UNARY_OP_SOFTPLUS,
 
         GGML_UNARY_OP_COUNT,
     };
@@ -590,6 +596,13 @@ extern "C" {
         GGML_GLU_OP_GEGLU_QUICK,
 
         GGML_GLU_OP_COUNT,
+    };
+
+    enum ggml_tri_type {
+        GGML_TRI_TYPE_UPPER_DIAG = 0,
+        GGML_TRI_TYPE_UPPER      = 1,
+        GGML_TRI_TYPE_LOWER_DIAG = 2,
+        GGML_TRI_TYPE_LOWER      = 3
     };
 
     enum ggml_object_type {
@@ -1163,6 +1176,11 @@ extern "C" {
             float beta,
             float eps);
 
+    // softplus(x) = log(1 + exp(x))
+    GGML_API struct ggml_tensor * ggml_softplus(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
     // gated linear unit ops
     // A: n columns, r rows,
     // result is n / 2 columns, r rows,
@@ -1580,6 +1598,34 @@ extern "C" {
     GGML_API struct ggml_tensor * ggml_diag(
         struct ggml_context     * ctx,
         struct ggml_tensor      * a);
+
+    // zero out elements based on triangular type
+    // a must be square (ne[0] == ne[1]) and contiguous
+    GGML_API struct ggml_tensor * ggml_tri(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            enum ggml_tri_type    type);
+
+    // solve triangular linear system
+    // currently only supports left=true, lower=true, uni=false
+    GGML_API struct ggml_tensor * ggml_solve_tri(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            struct ggml_tensor  * b,
+            bool                  left,
+            bool                  lower,
+            bool                  uni);
+
+    // cumulative sum along first dimension
+    GGML_API struct ggml_tensor * ggml_cumsum(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
+    // fill tensor with a scalar value
+    GGML_API struct ggml_tensor * ggml_fill(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            float                 value);
 
     // set elements above the diagonal to -INF
     GGML_API struct ggml_tensor * ggml_diag_mask_inf(
