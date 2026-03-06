@@ -124,8 +124,15 @@ Upstream implements DeltaNet with explicit matrix ops (`ggml_mul`, `ggml_exp`,
 - Sigmoid gate applied to attention output
 - `wo` applied AFTER gating as separate `build_lora_mm`
 
-## Recommendation
+## Resolution plan
 The DeltaNet implementation needs a substantial rewrite to match upstream.
 This is NOT a minor fix — it requires replacing `ggml_ssm_scan` with custom
-DeltaNet ops and fixing at least 9 other bugs. Consider porting the upstream
-`delta-net-base.cpp` and `qwen35.cpp` directly.
+DeltaNet ops and fixing at least 9 other bugs.
+
+See `docs/traces/qwen35-deltanet-rewrite-plan.md` for the full execution plan.
+
+### Issues
+- #18 — Add GGML ops (softplus, cumsum, tri, solve_tri, fill) — DONE
+- #19 — CUDA backends for new ops
+- #20 — Port delta-net-base graph builder
+- #21 — Rewrite qwen35.cpp to use DeltaNet builder
