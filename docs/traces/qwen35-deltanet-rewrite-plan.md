@@ -8,12 +8,20 @@
 - [ ] Phase 4: CUDA backends for new ops (#19) — deferred, CPU-only for now
 
 All work in PR #22. Model produces coherent output on CPU.
+GGML ops hardening in PR #24.
 
 ### Additional bugs found during implementation
 - Tensor loading mismatch: `attn_post_norm` loaded into `ffn_norm` field
 - Tensor loading mismatch: `ssm_dt` bias loaded into `ssm_dt_b` field
 - Graph context overflow: `graph_max_nodes` too small (3984 vs ~8200 needed)
   Increased minimum from 1024 to 16384.
+
+### Post-rewrite review findings (PR #24, issue #23)
+- GGML ops: added contiguity asserts to `cumsum`/`fill`, `GGML_ASSERT` in `solve_tri`
+- Latent chunked path bugs (open, #23):
+  - Beta pad on wrong dimension (head vs token) — silent when n_tokens % 64 == 0
+  - Gate permute wrong for multi-sequence — silent when n_seqs == 1
+  - Original layout works via accidental GGML broadcasting
 
 ## Problem (resolved)
 The original qwen35.cpp used `ggml_ssm_scan` (Mamba formula) for DeltaNet layers.

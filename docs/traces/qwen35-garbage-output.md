@@ -143,11 +143,23 @@ replaced with explicit matrix ops via two paths:
   was too small for DeltaNet chunking graph (~8200 tensors). Increased
   minimum to 16384.
 
+### Post-rewrite review (PR #24)
+- **GGML ops hardening**: Added contiguity asserts to `ggml_cumsum` and
+  `ggml_fill` constructors. Changed `assert()` to `GGML_ASSERT()` in
+  `solve_tri` zero-diagonal check (not compiled out in release builds).
+- **Latent chunked path bugs** (#23, open):
+  - Beta padding pads head dimension (ne[1]) instead of token dimension (ne[0])
+  - Gate permute `permute(2,0,3,1)` swaps sequences/tokens (wrong for n_seqs > 1)
+  - These are silent when `n_seq_tokens` is a multiple of `chunk_size` (64),
+    which is typical during normal inference. The original layout works via
+    accidental GGML broadcasting.
+
 ### Issues
 - #18 — Add GGML ops (softplus, cumsum, tri, solve_tri, fill) — DONE
 - #20 — Port delta-net-base graph builder — DONE (merged into #18 branch)
 - #21 — Rewrite qwen35.cpp to use DeltaNet builder — DONE (merged into #18 branch)
 - #15 — Go-side renderer/parser — DONE
+- #23 — Chunked path bugs (beta pad, gate permute) — OPEN (latent)
 - #19 — CUDA backends for new ops — deferred (CPU-only works)
 
 See `docs/traces/qwen35-deltanet-rewrite-plan.md` for the full execution plan.
