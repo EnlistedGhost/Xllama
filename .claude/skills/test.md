@@ -4,10 +4,9 @@ description: Run the ollama37 test framework locally. Use when running build, ru
 argument-hint: [build|runtime|inference|models]
 ---
 
-# Test Skill
+# Test
 
-## What
-TypeScript-based test framework with dual-judge architecture (simple + LLM) for validating ollama37 builds on Tesla K80 GPUs.
+TypeScript-based test framework with dual-judge architecture (simple + LLM) for validating ollama37 builds on Tesla K80 GPUs. Use `/test` to run.
 
 ## When to use
 - Validating a Docker build locally before pushing

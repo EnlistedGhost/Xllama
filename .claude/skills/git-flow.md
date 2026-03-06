@@ -3,9 +3,8 @@ name: git-flow
 description: Determines the correct git workflow for a change. Use before committing to decide between branch flow (PR) or direct commit to main.
 ---
 
-# Git Flow Skill
+# Git Flow
 
-## What
 Decision framework for how to commit changes — branch with PR, or direct to main.
 
 ## When to use

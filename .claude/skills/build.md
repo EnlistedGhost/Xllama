@@ -4,10 +4,9 @@ description: Provides step-by-step build instructions for ollama37. Use when you
 argument-hint: [native|docker]
 ---
 
-# Build Skill
+# Build
 
-## What
-Build ollama37 from source — either as a native binary or a Docker runtime image.
+Build ollama37 from source — native binary or Docker runtime image. Use `/build` to run.
 
 ## When to use
 - Compiling the Go binary and CUDA libraries from source

@@ -1017,9 +1017,14 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_SGD",
 
     "GLU",
+
+    "TRI",
+    "SOLVE_TRI",
+    "CUMSUM",
+    "FILL",
 };
 
-static_assert(GGML_OP_COUNT == 90, "GGML_OP_COUNT != 90");
+static_assert(GGML_OP_COUNT == 94, "GGML_OP_COUNT != 94");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1121,9 +1126,14 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "sgd(x)",
 
     "glu(x)",
+
+    "tri(n)",
+    "solve_tri(a, b)",
+    "cumsum(x)",
+    "fill(x, v)",
 };
 
-static_assert(GGML_OP_COUNT == 90, "GGML_OP_COUNT != 90");
+static_assert(GGML_OP_COUNT == 94, "GGML_OP_COUNT != 94");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -1144,9 +1154,10 @@ static const char * GGML_UNARY_OP_NAME[GGML_UNARY_OP_COUNT] = {
     "EXP",
     "GELU_ERF",
     "XIELU",
+    "SOFTPLUS",
 };
 
-static_assert(GGML_UNARY_OP_COUNT == 16, "GGML_UNARY_OP_COUNT != 16");
+static_assert(GGML_UNARY_OP_COUNT == 17, "GGML_UNARY_OP_COUNT != 17");
 
 static const char * GGML_GLU_OP_NAME[GGML_GLU_OP_COUNT] = {
     "REGLU",
@@ -2664,8 +2675,8 @@ struct ggml_tensor * ggml_xielu(
     struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
 
     ggml_set_op_params_i32(result, 0, (int32_t) GGML_UNARY_OP_XIELU);
-    ggml_set_op_params_f32(result, 1, beta + ggml_softplus(alpha_n));
-    ggml_set_op_params_f32(result, 2, ggml_softplus(alpha_p));
+    ggml_set_op_params_f32(result, 1, beta + ggml_softplus_f32(alpha_n));
+    ggml_set_op_params_f32(result, 2, ggml_softplus_f32(alpha_p));
     ggml_set_op_params_f32(result, 3, beta);
     ggml_set_op_params_f32(result, 4, eps);
 
@@ -2673,6 +2684,14 @@ struct ggml_tensor * ggml_xielu(
     result->src[0] = a;
 
     return result;
+}
+
+// ggml_softplus
+
+struct ggml_tensor * ggml_softplus(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a) {
+    return ggml_unary(ctx, a, GGML_UNARY_OP_SOFTPLUS);
 }
 
 // ggml_silu_back
@@ -3726,6 +3745,87 @@ struct ggml_tensor * ggml_diag(
     struct ggml_tensor * result = ggml_new_tensor(ctx, a->type, 4, ne);
 
     result->op     = GGML_OP_DIAG;
+    result->src[0] = a;
+
+    return result;
+}
+
+// ggml_tri
+
+struct ggml_tensor * ggml_tri(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        enum ggml_tri_type    type) {
+    GGML_ASSERT(a->type == GGML_TYPE_F32);
+    GGML_ASSERT(ggml_is_contiguous(a));
+    GGML_ASSERT(a->ne[0] == a->ne[1]);
+
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
+
+    ggml_set_op_params_i32(result, 0, type);
+
+    result->op     = GGML_OP_TRI;
+    result->src[0] = a;
+
+    return result;
+}
+
+// ggml_solve_tri
+
+struct ggml_tensor * ggml_solve_tri(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        struct ggml_tensor  * b,
+        bool                  left,
+        bool                  lower,
+        bool                  uni) {
+    GGML_ASSERT(a->type == GGML_TYPE_F32);
+    GGML_ASSERT(b->type == GGML_TYPE_F32);
+    GGML_ASSERT(a->ne[0] == a->ne[1]);
+    GGML_ASSERT(a->ne[1] == b->ne[1]);
+    GGML_ASSERT(a->ne[2] == b->ne[2]);
+    GGML_ASSERT(a->ne[3] == b->ne[3]);
+    GGML_ASSERT(ggml_is_contiguous(a));
+    GGML_ASSERT(ggml_is_contiguous(b));
+    GGML_ASSERT(lower && left && !uni); // TODO: support other variants
+
+    struct ggml_tensor * result = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, b->ne[0], b->ne[1], b->ne[2], b->ne[3]);
+
+    result->op     = GGML_OP_SOLVE_TRI;
+    result->src[0] = a;
+    result->src[1] = b;
+
+    return result;
+}
+
+// ggml_cumsum
+
+struct ggml_tensor * ggml_cumsum(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a) {
+    GGML_ASSERT(ggml_is_contiguous(a));
+
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
+
+    result->op     = GGML_OP_CUMSUM;
+    result->src[0] = a;
+
+    return result;
+}
+
+// ggml_fill
+
+struct ggml_tensor * ggml_fill(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a,
+        float                 value) {
+    GGML_ASSERT(ggml_is_contiguous(a));
+
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
+
+    ggml_set_op_params_f32(result, 0, value);
+
+    result->op     = GGML_OP_FILL;
     result->src[0] = a;
 
     return result;

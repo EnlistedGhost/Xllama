@@ -1361,7 +1361,8 @@ void llama_context::output_reorder() {
 //
 
 uint32_t llama_context::graph_max_nodes() const {
-    return std::max<uint32_t>(1024u, 8u*model.n_tensors());
+    // minimum 16384 to support models with complex graph topologies (e.g., DeltaNet chunking)
+    return std::max<uint32_t>(16384u, 8u*model.n_tensors());
 }
 
 llm_graph_result * llama_context::get_gf_res_reserve() const {

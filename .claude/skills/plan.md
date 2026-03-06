@@ -3,10 +3,9 @@ name: plan
 description: Break down feature requests into GitHub Issues. Use when the user describes a feature, enhancement, removal, or bug to plan and track.
 ---
 
-# Plan Skill
+# Plan
 
-## What
-Break down work into GitHub Issues using the project's issue templates.
+Break down work into GitHub Issues using the project's issue templates. Use `/plan` to start.
 
 ## When to use
 - User describes a feature, enhancement, or removal request
@@ -30,3 +29,8 @@ Break down work into GitHub Issues using the project's issue templates.
 2. Break into individual issues if needed
 3. Create issues via `gh issue create`
 4. Link related issues with dependencies in the description
+
+## Issue tracking
+- After creating issues, confirm the issue numbers with the user
+- When revisiting a plan, check existing issues for updates before creating duplicates
+- Use `gh issue list` and `gh issue view <number>` to check current state

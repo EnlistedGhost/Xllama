@@ -3,10 +3,9 @@ name: ci
 description: Run CI/CD workflows for ollama37. Use when building or testing on a remote runner, triggering GitHub Actions, or deciding between local vs CI builds.
 ---
 
-# CI Skill
+# CI
 
-## What
-Run build and test workflows via GitHub Actions on a self-hosted runner with K80 GPU access.
+Run build and test workflows via GitHub Actions on a self-hosted runner with K80 GPU access. Use `/ci` to trigger.
 
 ## When to use
 - Developing on a machine without K80 hardware

@@ -3,10 +3,9 @@ name: debug
 description: Shows environment variables and commands for debugging ollama37. Use when troubleshooting server startup failures, GPU detection issues, CUBLAS errors, or runtime problems.
 ---
 
-# Debug Skill
+# Debug
 
-## What
-Debug and troubleshoot ollama37 runtime issues using environment variables and logging.
+Debug and troubleshoot ollama37 runtime issues using environment variables and logging. Use `/debug` to get commands.
 
 ## When to use
 - Server startup failures

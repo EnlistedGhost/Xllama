@@ -217,6 +217,7 @@ struct llama_layer {
     struct ggml_tensor * wv        = nullptr;
     struct ggml_tensor * wo        = nullptr;
     struct ggml_tensor * wqkv      = nullptr;
+    struct ggml_tensor * wqkv_gate = nullptr;
     struct ggml_tensor * wq_a      = nullptr;
     struct ggml_tensor * wq_b      = nullptr;
     struct ggml_tensor * wkv_a_mqa = nullptr;
@@ -303,6 +304,10 @@ struct llama_layer {
     // mamba bias
     struct ggml_tensor * ssm_conv1d_b = nullptr;
     struct ggml_tensor * ssm_dt_b     = nullptr;
+
+    // qwen35 DeltaNet
+    struct ggml_tensor * ssm_alpha = nullptr;
+    struct ggml_tensor * ssm_beta  = nullptr;
 
     // rwkv
     struct ggml_tensor * time_mix_w1         = nullptr;
