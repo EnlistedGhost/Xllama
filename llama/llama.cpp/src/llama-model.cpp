@@ -12226,7 +12226,7 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
         q = ggml_cont_4d(ctx0, ggml_permute(ctx0, q, 0, 2, 1, 3), S_v, n_tokens, H_v, n_seqs);
         k = ggml_cont_4d(ctx0, ggml_permute(ctx0, k, 0, 2, 1, 3), S_v, n_tokens, H_v, n_seqs);
         v = ggml_cont_4d(ctx0, ggml_permute(ctx0, v, 0, 2, 1, 3), S_v, n_tokens, H_v, n_seqs);
-        g = ggml_cont_4d(ctx0, ggml_permute(ctx0, g, 1, 3, 0, 2), n_tokens, 1, H_k, n_seqs);
+        g = ggml_cont_4d(ctx0, ggml_permute(ctx0, g, 2, 0, 3, 1), n_tokens, 1, H_k, n_seqs);
 
         beta  = ggml_cont(ctx0, ggml_permute(ctx0, beta, 2, 0, 1, 3));
         state = ggml_reshape_4d(ctx0, state, S_v, S_v, H_v, n_seqs);
@@ -12239,7 +12239,7 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
         k    = ggml_pad(ctx0, k, 0, pad, 0, 0);
         v    = ggml_pad(ctx0, v, 0, pad, 0, 0);
         g    = ggml_pad(ctx0, g, pad, 0, 0, 0);
-        beta = ggml_pad(ctx0, beta, pad, 0, 0, 0);
+        beta = ggml_pad(ctx0, beta, 0, pad, 0, 0);
 
         ggml_tensor * v_beta = ggml_mul(ctx0, v, beta);
         ggml_tensor * k_beta = ggml_mul(ctx0, k, beta);
@@ -12273,8 +12273,8 @@ struct llm_build_qwen35 : public llm_graph_context_mamba {
         ggml_tensor * k_decay = ggml_mul(ctx0, kmulkbeta, decay_mask);
         ggml_tensor * attn    = ggml_neg(ctx0, ggml_mul(ctx0, k_decay, causal_mask));
 
-        // attn is already strictly lower triangular (masked by causal_mask at line above)
-        ggml_tensor * lhs = ggml_sub(ctx0, ggml_repeat(ctx0, identity, attn), attn);
+        ggml_tensor * attn_lower = ggml_mul(ctx0, attn, causal_mask);
+        ggml_tensor * lhs        = ggml_sub(ctx0, ggml_repeat(ctx0, identity, attn_lower), attn_lower);
 
         ggml_tensor * lin_solve  = ggml_solve_tri(ctx0, lhs, attn, true, true, false);
         attn                     = ggml_mul(ctx0, lin_solve, causal_mask);
