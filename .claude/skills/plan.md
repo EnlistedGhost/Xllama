@@ -29,3 +29,8 @@ Break down work into GitHub Issues using the project's issue templates. Use `/pl
 2. Break into individual issues if needed
 3. Create issues via `gh issue create`
 4. Link related issues with dependencies in the description
+
+## Issue tracking
+- After creating issues, confirm the issue numbers with the user
+- When revisiting a plan, check existing issues for updates before creating duplicates
+- Use `gh issue list` and `gh issue view <number>` to check current state
