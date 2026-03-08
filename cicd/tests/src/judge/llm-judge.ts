@@ -15,12 +15,10 @@ import { TestResult, Judgment } from '../types.js';
 export class LLMJudge {
   private ollamaUrl: string;
   private model: string;
-  private batchSize: number;
 
   constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:12b') {
     this.ollamaUrl = ollamaUrl;
     this.model = model;
-    this.batchSize = 5;
   }
 
   /**
@@ -47,37 +45,52 @@ export class LLMJudge {
   }
 
   /**
-   * Build prompt for LLM evaluation.
+   * Build prompt for LLM evaluation of a single test.
    */
-  private buildPrompt(results: TestResult[]): string {
-    const testsSection = results
-      .map((r, i) => {
-        const stepsSummary = r.steps
-          .map((step, j) => {
-            const status = step.exitCode === 0 ? 'PASS' : 'FAIL';
-            const stepTimeout = r.testCase.steps[j]?.timeout || r.testCase.timeout;
-            return `  ${j + 1}. "${step.name}" - ${status} (exit: ${step.exitCode}, duration: ${this.formatDuration(step.duration)}, timeout: ${this.formatDuration(stepTimeout)})`;
-          })
-          .join('\n');
+  private buildPrompt(result: TestResult): string {
+    const r = result;
+    const stepsSummary = r.steps
+      .map((step, j) => {
+        const status = step.exitCode === 0 ? 'PASS' : 'FAIL';
+        const stepTimeout = r.testCase.steps[j]?.timeout || r.testCase.timeout;
+        return `  ${j + 1}. "${step.name}" - ${status} (exit: ${step.exitCode}, duration: ${this.formatDuration(step.duration)}, timeout: ${this.formatDuration(stepTimeout)})`;
+      })
+      .join('\n');
 
-        const allStepsPassed = r.steps.every((s) => s.exitCode === 0);
-        const simpleResult = allStepsPassed ? 'PASS' : 'FAIL';
+    const allStepsPassed = r.steps.every((s) => s.exitCode === 0);
+    const simpleResult = allStepsPassed ? 'PASS' : 'FAIL';
 
-        const timeoutMs = r.testCase.timeout;
-        const withinTimeout = r.totalDuration < timeoutMs;
-        const timeoutNote = withinTimeout
-          ? `Total duration ${this.formatDuration(r.totalDuration)} is within timeout of ${this.formatDuration(timeoutMs)}.`
-          : `Total duration ${this.formatDuration(r.totalDuration)} exceeded timeout of ${this.formatDuration(timeoutMs)}.`;
+    const timeoutMs = r.testCase.timeout;
+    const withinTimeout = r.totalDuration < timeoutMs;
+    const timeoutNote = withinTimeout
+      ? `Total duration ${this.formatDuration(r.totalDuration)} is within timeout of ${this.formatDuration(timeoutMs)}.`
+      : `Total duration ${this.formatDuration(r.totalDuration)} exceeded timeout of ${this.formatDuration(timeoutMs)}.`;
 
-        // Truncate logs to avoid context overflow
-        const logTruncateLimit = 3000;
-        const truncatedLogs =
-          r.logs.length > logTruncateLimit
-            ? r.logs.substring(0, logTruncateLimit) + '\n... (truncated)'
-            : r.logs;
+    // Truncate logs to avoid context overflow
+    const logTruncateLimit = 3000;
+    const truncatedLogs =
+      r.logs.length > logTruncateLimit
+        ? r.logs.substring(0, logTruncateLimit) + '\n... (truncated)'
+        : r.logs;
 
-        return `
-### Test ${i + 1}: ${r.testCase.id} - ${r.testCase.name}
+    process.stderr.write(`  [LLM] Prompt for ${r.testCase.id}: logs ${r.logs.length} chars (truncated to ${Math.min(r.logs.length, logTruncateLimit)})\n`);
+
+    return `You are a test evaluation judge for ollama37, a build of Ollama for Tesla K80 GPUs (CUDA compute 3.7).
+
+Analyze the following test result and determine if it passed or failed based on the criteria provided.
+
+Examine:
+1. The expected criteria
+2. The actual execution logs (stdout, stderr, exit codes)
+3. Whether the output meets the criteria
+
+K80-specific patterns to watch for:
+- "CUBLAS_STATUS_*" errors indicate CUDA issues
+- "library=cpu" means GPU detection failed (should be "library=CUDA")
+- "compute=3.7" confirms K80 GPU detection (expected)
+- "cudaMalloc failed" or "out of memory" indicates VRAM issues
+
+### Test: ${r.testCase.id} - ${r.testCase.name}
 
 **Criteria:**
 ${r.testCase.criteria}
@@ -94,34 +107,12 @@ ${r.testCase.suite === 'build' ? 'Note: Long build times are expected for CUDA c
 \`\`\`
 ${truncatedLogs}
 \`\`\`
-`;
-      })
-      .join('\n---\n');
 
-    return `You are a test evaluation judge for ollama37, a build of Ollama for Tesla K80 GPUs (CUDA compute 3.7).
+Respond with a JSON object:
+{"testId": "${r.testCase.id}", "pass": true, "reason": "Brief explanation"}
 
-Analyze the following test results and determine if each test passed or failed based on the criteria provided.
-
-For each test, examine:
-1. The expected criteria
-2. The actual execution logs (stdout, stderr, exit codes)
-3. Whether the output meets the criteria
-
-K80-specific patterns to watch for:
-- "CUBLAS_STATUS_*" errors indicate CUDA issues
-- "library=cpu" means GPU detection failed (should be "library=CUDA")
-- "compute=3.7" confirms K80 GPU detection (expected)
-- "cudaMalloc failed" or "out of memory" indicates VRAM issues
-
-${testsSection}
-
-Respond with a JSON array containing one object per test:
-[
-  {"testId": "TC-XXX-001", "pass": true, "reason": "Brief explanation"},
-  {"testId": "TC-XXX-002", "pass": false, "reason": "Brief explanation", "evidence": "The actual log line that caused failure"}
-]
-
-When marking a test as FAIL, you MUST provide the "evidence" field with the exact log line content that caused the failure.
+If the test FAILED:
+{"testId": "${r.testCase.id}", "pass": false, "reason": "Brief explanation", "evidence": "The actual log line that caused failure"}
 
 Important:
 - For AI-generated text, accept reasonable variations (e.g., "4", "four", "The answer is 4")
@@ -130,14 +121,17 @@ Important:
 - Long durations are acceptable if within the configured timeout
 - Be lenient with formatting differences, focus on semantic correctness
 
-Respond ONLY with the JSON array, no other text.`;
+Respond ONLY with the JSON object, no other text.`;
   }
 
   /**
-   * Judge a batch of test results.
+   * Judge a single test result.
    */
-  private async judgeBatch(results: TestResult[]): Promise<Judgment[]> {
-    const prompt = this.buildPrompt(results);
+  private async judgeOne(result: TestResult): Promise<Judgment> {
+    const prompt = this.buildPrompt(result);
+    const testId = result.testCase.id;
+
+    process.stderr.write(`  [LLM] Prompt size: ${prompt.length} chars\n`);
 
     const response = await axios.post(
       `${this.ollamaUrl}/api/generate`,
@@ -147,7 +141,7 @@ Respond ONLY with the JSON array, no other text.`;
         stream: false,
         options: {
           temperature: 0.1,
-          num_predict: 2048,
+          num_predict: 1024,
         },
       },
       {
@@ -157,60 +151,74 @@ Respond ONLY with the JSON array, no other text.`;
 
     const responseText = response.data.response;
 
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+    // Log raw response
+    if (!responseText) {
+      process.stderr.write(`  [LLM] WARNING: Empty response for ${testId}\n`);
+      return {
+        testId,
+        pass: false,
+        reason: 'LLM returned empty response',
+      };
+    }
+
+    process.stderr.write(`  [LLM] Raw response for ${testId} (${responseText.length} chars): ${responseText.substring(0, 500)}\n`);
+
+    // Extract JSON object from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error('No JSON array found in LLM response');
+      process.stderr.write(`  [LLM] WARNING: No JSON object found in response for ${testId}\n`);
+      process.stderr.write(`  [LLM] Full response: ${responseText}\n`);
+      return {
+        testId,
+        pass: false,
+        reason: `LLM response contained no JSON: ${responseText.substring(0, 200)}`,
+      };
     }
 
     try {
-      const judgments = JSON.parse(jsonMatch[0]) as Judgment[];
+      const judgment = JSON.parse(jsonMatch[0]) as Judgment;
 
-      // Validate and fill missing
-      const resultIds = results.map((r) => r.testCase.id);
-      const judgedIds = new Set(judgments.map((j) => j.testId));
-
-      for (const id of resultIds) {
-        if (!judgedIds.has(id)) {
-          judgments.push({
-            testId: id,
-            pass: false,
-            reason: 'No judgment provided by LLM',
-          });
-        }
+      // Validate testId matches
+      if (judgment.testId !== testId) {
+        process.stderr.write(`  [LLM] WARNING: Response testId "${judgment.testId}" doesn't match expected "${testId}"\n`);
+        judgment.testId = testId;
       }
 
-      return judgments;
+      return judgment;
     } catch {
-      throw new Error(`Failed to parse LLM response: ${responseText.substring(0, 200)}`);
+      process.stderr.write(`  [LLM] WARNING: Failed to parse JSON for ${testId}\n`);
+      process.stderr.write(`  [LLM] Full response: ${responseText}\n`);
+      return {
+        testId,
+        pass: false,
+        reason: `Failed to parse LLM response: ${responseText.substring(0, 200)}`,
+      };
     }
   }
 
   /**
-   * Judge all test results.
+   * Judge all test results, one at a time.
    */
   async judgeResults(results: TestResult[]): Promise<Judgment[]> {
     const allJudgments: Judgment[] = [];
 
-    for (let i = 0; i < results.length; i += this.batchSize) {
-      const batch = results.slice(i, i + this.batchSize);
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
       process.stderr.write(
-        `  [LLM] Judging batch ${Math.floor(i / this.batchSize) + 1}/${Math.ceil(results.length / this.batchSize)}...\n`
+        `  [LLM] Judging ${i + 1}/${results.length}: ${result.testCase.id}...\n`
       );
 
       try {
-        const judgments = await this.judgeBatch(batch);
-        allJudgments.push(...judgments);
+        const judgment = await this.judgeOne(result);
+        allJudgments.push(judgment);
+        process.stderr.write(`  [LLM] ${result.testCase.id}: ${judgment.pass ? 'PASS' : 'FAIL'} — ${judgment.reason}\n`);
       } catch (error) {
-        process.stderr.write(`  [LLM] Failed to judge batch: ${error}\n`);
-        // Mark all tests in batch as failed
-        for (const r of batch) {
-          allJudgments.push({
-            testId: r.testCase.id,
-            pass: false,
-            reason: 'LLM judgment failed: ' + String(error),
-          });
-        }
+        process.stderr.write(`  [LLM] Failed to judge ${result.testCase.id}: ${error}\n`);
+        allJudgments.push({
+          testId: result.testCase.id,
+          pass: false,
+          reason: 'LLM judgment failed: ' + String(error),
+        });
       }
     }
 
