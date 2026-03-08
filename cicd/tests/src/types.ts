@@ -38,6 +38,10 @@ export interface TestCase {
   timeout: number;
   /** Test IDs that must pass before this test runs */
   dependencies: string[];
+  /** TestLink external ID (e.g., ollama37-21) */
+  testlinkId?: string;
+  /** GitHub issue number this test traces to */
+  issue?: number;
   /** Test steps to execute */
   steps: TestStep[];
   /** Human-readable criteria for LLM judge evaluation */

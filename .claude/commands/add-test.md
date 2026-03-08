@@ -4,15 +4,32 @@ The user will provide: **$ARGUMENTS** (suite name and description of what to tes
 
 ## Steps
 
-1. **Determine the suite** — build, runtime, inference, or models.
+1. **Identify user story** — Ask the user for the GitHub issue number, or create one if needed.
 
-2. **Find next ID** — Check existing test cases to auto-increment:
+2. **Determine the suite** — build, runtime, inference, or models.
+
+3. **Find next ID** — Check existing test cases to auto-increment:
 
 ```bash
 ls cicd/tests/testcases/<suite>/
 ```
 
-3. **Create the YAML test case** at `cicd/tests/testcases/<suite>/TC-<SUITE>-<NNN>.yml`:
+4. **Create TestLink test case** — Use MCP tool to create the test case in TestLink:
+
+```
+mcp__testlink__create_test_case:
+  project_id: "1"
+  suite_id: "<suite ID>"  # Build=2, Inference=3, Runtime=39, Models=122
+  name: "TC-<SUITE>-<NNN>: <Descriptive Name>"
+  summary: "Related to #<issue>. <What this test validates.>"
+  steps: [{ actions: "<command>", expected_results: "<expected>" }]
+  importance: 2
+  execution_type: 2
+```
+
+Record the returned `tc_external_id` as the `testlink_id`.
+
+5. **Create the YAML test case** at `cicd/tests/testcases/<suite>/TC-<SUITE>-<NNN>.yml`:
 
 ```yaml
 id: TC-<SUITE>-<NNN>
@@ -21,6 +38,8 @@ suite: <suite>
 priority: <1-3>
 timeout: <milliseconds>
 dependencies: []
+testlink_id: ollama37-<N>
+issue: <github-issue-number>
 
 steps:
   - name: <step description>
@@ -38,28 +57,7 @@ criteria: |
   - <condition 2>
 ```
 
-4. **Add spec entry** — Append the test specification to `cicd/specs/<suite>.md` following the existing format:
-
-```markdown
----
-
-## TC-<SUITE>-<NNN>: <Name>
-
-**Importance:** <High/Medium/Low>
-**Execution Type:** Automated
-**Timeout:** <seconds> seconds
-
-**Summary:**
-<What this test verifies>
-
-### Steps
-
-| # | Action | Expected Result |
-|---|--------|-----------------|
-| 1 | <command> | <expected output> |
-```
-
-5. **Verify** — Run the new test:
+6. **Verify** — Run the new test:
 
 ```bash
 cd cicd/tests && npm run test -- --suite <suite>
