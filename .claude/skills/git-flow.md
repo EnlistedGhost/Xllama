@@ -22,13 +22,29 @@ Ask: **does this change need testing?**
 When in doubt, use branch flow.
 
 ## Branch flow
-1. Create a feature branch from `main`
+1. Create a feature branch from `main`: `issue-<N>-<slug>`
 2. Commit changes to the branch
 3. Test — run `/test` locally or `/ci` via GitHub Actions
-4. Create PR against `main`
-5. Review the PR
-6. Merge to `main` after approval
-7. Delete the branch after merge
+4. Push and create PR against `main`
+5. Run CI on the branch: `gh workflow run test-pipeline.yml --ref <branch>`
+6. After CI passes, merge:
+   ```bash
+   gh pr merge <PR> --merge --delete-branch
+   ```
+7. Update related issues after merge
+
+## PR conventions
+- Title: short, imperative (under 70 chars)
+- Body: `Fixes #N` or `Closes #N` to auto-close issues
+- Body: `## Summary` + `## Test plan` sections
+- Labels: copy from the issue (priority + component)
 
 ## Commit on main
 For changes that don't need testing: review the diff, commit directly to `main`.
+
+## Stacking branches
+When a feature branch depends on another unmerged branch:
+```bash
+git checkout -b issue-<N>-<slug> issue-<parent>-<slug>
+```
+Set PR base to the parent branch, not main. After parent merges, rebase onto main.

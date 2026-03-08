@@ -160,6 +160,32 @@ replaced with explicit matrix ops via two paths:
 - #21 — Rewrite qwen35.cpp to use DeltaNet builder — DONE (merged into #18 branch)
 - #15 — Go-side renderer/parser — DONE
 - #23 — Chunked path bugs (beta pad, gate permute) — OPEN (latent)
-- #19 — CUDA backends for new ops — deferred (CPU-only works)
+- #19 — CUDA backends for new ops — IN PROGRESS
+
+### CUDA kernel debugging (issue #19)
+
+7 CUDA kernels implemented: softplus, cumsum, tri, solve_tri, fill, diag (new ops),
+plus softplus added to existing unary template.
+
+**Bugs found and fixed:**
+1. **softplus overflow**: CUDA kernel was `logf(1.0f + expf(x))` without threshold.
+   For `x > ~88`, `expf(x) = +inf` → NaN downstream. CPU uses `(x > 20.0f) ? x : logf(1.0f + expf(x))`.
+   Fixed to match.
+2. **solve_tri dimension swap**: CUDA had `n = src0->ne[0]` but CPU uses
+   `k = src1->ne[0]` (RHS cols), `n = src1->ne[1]` (matrix size). Fixed.
+
+**Debugging approach:** Both fixes together still crashed. Disabled all new CUDA ops
+(CPU fallback) → model works. Binary search by enabling ops one at a time:
+- softplus + fill + diag → OK
+- + cumsum → OK
+- + tri → CRASH (isolated the bug)
+- Root cause: tri enum mismatch (see bug #3)
+
+3. **tri enum mismatch**: CUDA kernel had hardcoded switch values that didn't match
+   `ggml_tri_type` enum: `UPPER_DIAG=0, UPPER=1, LOWER_DIAG=2, LOWER=3`.
+   Kernel had them reversed (case 0=LOWER, case 1=LOWER_DIAG, etc.).
+   This produced wrong causal masks → garbage logits → NaN → sampler crash.
+
+**Result:** All 7 CUDA ops working. Model produces coherent output with full GPU acceleration.
 
 See `docs/traces/qwen35-deltanet-rewrite-plan.md` for the full execution plan.
