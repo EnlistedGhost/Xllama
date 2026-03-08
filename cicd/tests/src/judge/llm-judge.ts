@@ -138,6 +138,9 @@ export class LLMJudge {
     );
 
     const responseText = response.data.response;
+    const promptTokens = response.data.prompt_eval_count ?? '?';
+    const responseTokens = response.data.eval_count ?? '?';
+    process.stderr.write(`  [LLM] Tokens for ${testId}: prompt=${promptTokens}, response=${responseTokens}\n`);
 
     // Log raw response
     if (!responseText) {
