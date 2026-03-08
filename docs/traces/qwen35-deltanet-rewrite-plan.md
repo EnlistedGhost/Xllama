@@ -5,10 +5,20 @@
 - [x] Phase 2: Port delta-net-base graph builder (#20) — merged into Phase 2+3
 - [x] Phase 3: Rewrite qwen35.cpp to use DeltaNet builder (#21) — merged into Phase 2+3
 - [x] Phase 5: Fix Go-side renderer (#15) — added qwen3.5 renderer/parser
-- [ ] Phase 4: CUDA backends for new ops (#19) — deferred, CPU-only for now
+- [ ] Phase 4: CUDA backends for new ops (#19) — IN PROGRESS
 
 All work in PR #22. Model produces coherent output on CPU.
 GGML ops hardening in PR #24.
+
+### Phase 4: CUDA backends (#19) — COMPLETE
+7 kernels implemented: softplus, cumsum, tri, solve_tri, fill, diag.
+3 bugs found and fixed:
+1. softplus overflow (missing `x > 20.0f` threshold)
+2. solve_tri dimension swap (`n`/`k` from wrong tensor)
+3. tri enum mismatch (hardcoded values didn't match `ggml_tri_type` enum order)
+
+Debugging approach: disabled all ops (CPU fallback worked), then binary-searched
+by enabling one at a time. tri was the final culprit.
 
 ### Additional bugs found during implementation
 - Tensor loading mismatch: `attn_post_norm` loaded into `ffn_norm` field

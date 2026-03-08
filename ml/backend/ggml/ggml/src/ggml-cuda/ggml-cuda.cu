@@ -19,7 +19,10 @@
 #include "ggml-cuda/count-equal.cuh"
 #include "ggml-cuda/cpy.cuh"
 #include "ggml-cuda/cross-entropy-loss.cuh"
+#include "ggml-cuda/cumsum.cuh"
+#include "ggml-cuda/diag.cuh"
 #include "ggml-cuda/diagmask.cuh"
+#include "ggml-cuda/fill.cuh"
 #include "ggml-cuda/fattn.cuh"
 #include "ggml-cuda/getrows.cuh"
 #include "ggml-cuda/im2col.cuh"
@@ -37,6 +40,7 @@
 #include "ggml-cuda/rope.cuh"
 #include "ggml-cuda/roll.cuh"
 #include "ggml-cuda/scale.cuh"
+#include "ggml-cuda/solve-tri.cuh"
 #include "ggml-cuda/softcap.cuh"
 #include "ggml-cuda/softmax.cuh"
 #include "ggml-cuda/ssm-conv.cuh"
@@ -44,6 +48,7 @@
 #include "ggml-cuda/sum.cuh"
 #include "ggml-cuda/sumrows.cuh"
 #include "ggml-cuda/mean.cuh"
+#include "ggml-cuda/tri.cuh"
 #include "ggml-cuda/tsembd.cuh"
 #include "ggml-cuda/topk-moe.cuh"
 #include "ggml-cuda/unary.cuh"
@@ -2564,6 +2569,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
                 case GGML_UNARY_OP_XIELU:
                     ggml_cuda_op_xielu(ctx, dst);
                     break;
+                case GGML_UNARY_OP_SOFTPLUS:
+                    ggml_cuda_op_softplus(ctx, dst);
+                    break;
                 default:
                     return false;
             }
@@ -2615,6 +2623,21 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_ARANGE:
             ggml_cuda_op_arange(ctx, dst);
+            break;
+        case GGML_OP_CUMSUM:
+            ggml_cuda_op_cumsum(ctx, dst);
+            break;
+        case GGML_OP_TRI:
+            ggml_cuda_op_tri(ctx, dst);
+            break;
+        case GGML_OP_SOLVE_TRI:
+            ggml_cuda_op_solve_tri(ctx, dst);
+            break;
+        case GGML_OP_FILL:
+            ggml_cuda_op_fill(ctx, dst);
+            break;
+        case GGML_OP_DIAG:
+            ggml_cuda_op_diag(ctx, dst);
             break;
         case GGML_OP_TIMESTEP_EMBEDDING:
             ggml_cuda_op_timestep_embedding(ctx, dst);
@@ -3740,6 +3763,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                 case GGML_UNARY_OP_TANH:
                 case GGML_UNARY_OP_EXP:
                 case GGML_UNARY_OP_ELU:
+                case GGML_UNARY_OP_SOFTPLUS:
                     return ggml_is_contiguous(op->src[0]);
                 default:
                     return false;
@@ -4027,7 +4051,14 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
         case GGML_OP_RWKV_WKV6:
         case GGML_OP_GATED_LINEAR_ATTN:
         case GGML_OP_RWKV_WKV7:
+        case GGML_OP_FILL:
+        case GGML_OP_DIAG:
             return true;
+        case GGML_OP_TRI:
+        case GGML_OP_SOLVE_TRI:
+            return true;
+        case GGML_OP_CUMSUM:
+            return ggml_is_contiguous(op->src[0]);
         case GGML_OP_FLASH_ATTN_EXT:
             return ggml_cuda_flash_attn_ext_supported(dev_ctx->device, op);
         case GGML_OP_CROSS_ENTROPY_LOSS:
