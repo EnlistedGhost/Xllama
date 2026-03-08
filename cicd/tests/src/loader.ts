@@ -227,6 +227,7 @@ export class TestLoader {
       dependencies: Array.isArray(raw.dependencies) ? raw.dependencies : [],
       testlinkId: typeof raw.testlink_id === 'string' ? raw.testlink_id : undefined,
       issue: typeof raw.issue === 'number' ? raw.issue : undefined,
+      goal: typeof raw.goal === 'string' ? raw.goal : undefined,
       steps,
       criteria: typeof raw.criteria === 'string' ? raw.criteria : '',
     };
