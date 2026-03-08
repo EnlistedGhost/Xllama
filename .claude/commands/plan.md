@@ -4,13 +4,20 @@ The user will provide: **$ARGUMENTS**
 
 ## Steps
 
-1. **Classify** — Determine action type: feature, enhancement, removal, or bug.
-2. **Break down** — Split into individual issues if the request covers multiple items.
-3. **Create issues** — Use `gh issue create` for each item:
+1. **Check existing issues** — avoid duplicates:
 
 ```bash
-# New feature
-gh issue create --label "feature" --title "<title>" --body "$(cat <<'EOF'
+gh issue list --state all
+```
+
+2. **Classify** — Determine type (feature/enhancement/removal/bug), priority, and components.
+3. **Break down** — Split into individual issues if the request covers multiple items.
+4. **Create issues** with labels:
+
+```bash
+gh issue create \
+  --label "feature" --label "priority:medium" --label "component:cuda" \
+  --title "<title>" --body "$(cat <<'EOF'
 ## User Story
 As a [role], I want [capability], so that [benefit].
 
@@ -21,54 +28,21 @@ As a [role], I want [capability], so that [benefit].
 - ...
 
 ## Dependencies
-- None
-EOF
-)"
-
-# Enhancement
-gh issue create --label "enhancement" --title "<title>" --body "$(cat <<'EOF'
-## Current Behavior
-...
-
-## Proposed Change
-...
-
-## Acceptance Criteria
-1. ...
-EOF
-)"
-
-# Removal
-gh issue create --label "removal" --title "<title>" --body "$(cat <<'EOF'
-## What to Remove
-...
-
-## Reason
-...
-
-## Impact
-...
-EOF
-)"
-
-# Bug
-gh issue create --label "bug" --title "<title>" --body "$(cat <<'EOF'
-## Description
-...
-
-## Expected Behavior
-...
-
-## Steps to Reproduce
-1. ...
+- None | Depends on #N
 EOF
 )"
 ```
 
-4. **Summarise** — Output a table:
+5. **Add to project board**:
+
+```bash
+gh project item-add 2 --owner dogkeeper886 --url <issue-url>
+```
+
+6. **Summarize** — Output a table:
 
 ```
-| Issue | Title | Type | URL |
-|-------|-------|------|-----|
-| #N    | ...   | ...  | ... |
+| Issue | Title | Type | Priority | URL |
+|-------|-------|------|----------|-----|
+| #N    | ...   | ...  | ...      | ... |
 ```

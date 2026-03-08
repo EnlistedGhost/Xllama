@@ -30,6 +30,27 @@ function_a()                          # file.cpp:123
       └── async_operation()           # other.cpp:110 — staged upload
 ```
 
-## Where to save traces
-- `docs/traces/` directory — one markdown file per traced path
+## Where to save
+
+Two places, distinct roles — no duplication:
+
+### Local: `docs/traces/` (knowledge)
+- Full technical detail — call flows, root causes, code references
+- One markdown file per traced path
 - Name by feature: `model-loading.md`, `kv-cache-init.md`, `gpu-offload.md`
+- This is the deep reference for future sessions
+
+### Remote: GitHub issue (timeline)
+- Short status update only — what was found, what's next
+- Link to the trace doc: `See docs/traces/<file>.md for details`
+- Never repeat full trace content in issue comments
+- Example:
+  ```
+  gh issue comment <N> --body "Traced softplus overflow in CUDA kernel.
+  Root cause: missing threshold guard. Fix applied.
+  Details: docs/traces/qwen35-garbage-output.md"
+  ```
+
+### Rule
+- **Issue** = timeline ("what happened when")
+- **Trace doc** = knowledge ("how it works, what we learned")

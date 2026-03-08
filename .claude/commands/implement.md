@@ -15,17 +15,22 @@ gh issue view <issue-number>
 3. **Create branch** (branch flow):
 
 ```bash
-# Branch name: issue-<number>-<short-slug>
 git checkout -b issue-<number>-<slug> main
 ```
 
-4. **Implement** — Make the changes based on the issue's acceptance criteria.
+4. **Comment on the issue**:
 
-5. **Add tests** if the change is testable — suggest `/add-test`.
+```bash
+gh issue comment <N> --body "Starting work on branch \`issue-<N>-<slug>\`"
+```
 
-6. **Build and test** — Use `/build` and `/test` or `/ci`.
+5. **Implement** — Make the changes based on the issue's acceptance criteria.
 
-7. **Create PR**:
+6. **Add tests** if the change is testable — suggest `/add-test`.
+
+7. **Build and test** — Use `/build` and `/test` or `/ci`.
+
+8. **Create PR** with labels from the issue:
 
 ```bash
 gh pr create --title "<title>" --body "$(cat <<'EOF'
@@ -37,7 +42,19 @@ Fixes #<issue-number>
 ## Test plan
 - [ ] ...
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Generated with [Claude Code](https://claude.com/claude-code)
 EOF
 )"
+```
+
+9. **Update issue status**:
+
+```bash
+gh issue edit <N> --add-label "status:needs-review"
+```
+
+10. **After merge** — clean up labels:
+
+```bash
+gh issue edit <N> --remove-label "status:needs-review"
 ```
