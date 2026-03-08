@@ -21,12 +21,14 @@ COPY . /usr/local/src/ollama37
 WORKDIR /usr/local/src/ollama37
 
 # Configure build with CMake
-# Use "CUDA 11" preset for Tesla K80 compute capability 3.7 support
+# Use "CUDA 11 K80" preset: compiles native CUBIN for sm_37 (no PTX JIT needed)
+# The "CUDA 11" preset only embeds PTX (37-virtual), requiring ~3-4 min of JIT
+# compilation on every container restart. Native CUBIN eliminates this entirely.
 # Set LD_LIBRARY_PATH during build so CMake can locate GCC 10 runtime libraries
 # and properly link against them (required for C++ standard library and atomics)
 RUN bash -c 'LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/lib64:$LD_LIBRARY_PATH \
     CC=/usr/local/bin/gcc CXX=/usr/local/bin/g++ \
-    cmake --preset "CUDA 11"'
+    cmake --preset "CUDA 11 K80"'
 
 # Build C/C++/CUDA libraries with CMake
 # Compile all GGML CUDA kernels and Ollama native libraries

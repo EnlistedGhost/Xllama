@@ -143,7 +143,7 @@ docker/
 
 **Build stage** (FROM ollama37-builder):
 1. Clone/copy ollama37 source
-2. Configure with CMake ("CUDA 11" preset for compute 3.7)
+2. Configure with CMake ("CUDA 11 K80" preset — native CUBIN for sm_37, no PTX JIT)
 3. Build C/C++/CUDA libraries (`cmake --build`)
 4. Install artifacts to `dist/` (`cmake --install` with CPU and CUDA components)
    - Automatically bundles CUDA runtime libs (cublas, cublasLt, cudart)
