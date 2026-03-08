@@ -53,7 +53,7 @@ jobs:
       - name: Install test runner dependencies
         run: cd cicd/tests && npm ci
 
-      - name: Run models test (TC-MODELS-001)
+      - name: Run models tests
         id: models-tests
         run: |
           cd cicd/tests
@@ -70,8 +70,8 @@ jobs:
           echo "Judge mode: ${{ inputs.judge_mode || 'dual' }}"
           echo "Judge flags: $JUDGE_FLAGS"
 
-          # Run single test TC-MODELS-001 (gpt-oss:20b)
-          npx tsx src/cli.ts run --id TC-MODELS-001 $JUDGE_FLAGS --format json > /tmp/models-results.json || true
+          # Run all models tests
+          npx tsx src/cli.ts run --suite models $JUDGE_FLAGS --format json > /tmp/models-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/models-results.json
@@ -90,6 +90,9 @@ jobs:
         run: |
           echo "Unloading test models from VRAM..."
           curl -s http://localhost:11434/api/generate -d '{"model":"gpt-oss:20b","keep_alive":0}' || true
+          curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:27b","keep_alive":0}' || true
+          curl -s http://localhost:11434/api/generate -d '{"model":"deepseek-r1:14b","keep_alive":0}' || true
+          curl -s http://localhost:11434/api/generate -d '{"model":"qwen3.5:9b","keep_alive":0}' || true
           echo "Models unloaded"
 
       - name: Upload models results
