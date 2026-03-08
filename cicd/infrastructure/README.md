@@ -22,12 +22,22 @@ A stable Ollama instance for evaluating test results.
 cd cicd/infrastructure
 docker compose -f docker-compose.judge.yml up -d
 
-# Pull a judge model (first time only)
-curl -X POST http://localhost:11435/api/pull -d '{"name": "gemma3:1b"}'
+# Pull base model (first time only)
+curl -X POST http://localhost:11435/api/pull -d '{"name": "gemma3:12b"}'
+
+# Create judge model with 8K context (first time only)
+docker cp Modelfile.judge ollama37-judge:/tmp/Modelfile.judge
+docker exec ollama37-judge ollama create gemma3:12b-judge -f /tmp/Modelfile.judge
 ```
 
 **Verify:**
 ```bash
 docker ps | grep ollama37-judge
-curl http://localhost:11435/api/tags
+docker exec ollama37-judge ollama list  # should show gemma3:12b-judge
 ```
+
+## Judge Model (`Modelfile.judge`)
+
+Custom model based on `gemma3:12b` with:
+- `num_ctx 8192` — doubled from default 4096 to handle test prompts without truncation
+- `temperature 0.1` — low temperature for consistent, deterministic judgments

@@ -14,7 +14,7 @@ on:
       judge_model:
         description: "LLM model for judging (if dual mode)"
         required: false
-        default: "gemma3:12b"
+        default: "gemma3:12b-judge"
         type: string
   workflow_call:
     inputs:
@@ -26,7 +26,7 @@ on:
       judge_model:
         description: "LLM model for judging"
         required: false
-        default: "gemma3:12b"
+        default: "gemma3:12b-judge"
         type: string
     outputs:
       result:
@@ -67,7 +67,7 @@ jobs:
             JUDGE_FLAGS="--no-llm"
           else
             # dual mode (default) - both judges run
-            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:12b' }}"
+            JUDGE_FLAGS="--judge-model ${{ inputs.judge_model || 'gemma3:12b-judge' }}"
           fi
 
           echo "Judge mode: ${{ inputs.judge_mode || 'dual' }}"

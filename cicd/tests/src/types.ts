@@ -242,6 +242,6 @@ export const DEFAULT_CONFIG: Partial<RunConfig> = {
   dryRun: false,
   noLlm: false,
   judgeUrl: 'http://localhost:11435',
-  judgeModel: 'gemma3:12b',
+  judgeModel: 'gemma3:12b-judge',
   outputFormat: 'console',
 };

@@ -14,7 +14,7 @@ on:
       judge_model:
         description: "LLM model for judging (if dual mode)"
         required: false
-        default: "gemma3:12b"
+        default: "gemma3:12b-judge"
         type: string
 
 jobs:

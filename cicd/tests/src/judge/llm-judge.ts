@@ -16,7 +16,7 @@ export class LLMJudge {
   private ollamaUrl: string;
   private model: string;
 
-  constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:12b') {
+  constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:12b-judge') {
     this.ollamaUrl = ollamaUrl;
     this.model = model;
   }
