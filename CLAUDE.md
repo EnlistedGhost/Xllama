@@ -91,6 +91,41 @@ This is the end-to-end flow for working on any project, issue, or story. **Alway
 
 **Key principle**: The issue is the single source of truth. Anyone reading it should see the full history — start, failures, fixes, and resolution.
 
+## Test Management Flow
+
+Test cases follow a **requirements-driven** flow: every test traces back to a user story.
+
+```
+GitHub Issue (User Story)  →  TestLink Test Case  →  YAML Test Script
+(what to validate)            (how to validate)      (automated execution)
+```
+
+### 1. User Story (GitHub Issue)
+- Created via `/plan` or manually
+- Describes WHAT needs testing and WHY
+- Has type + priority + component labels
+
+### 2. Test Case Design (TestLink)
+- Create test case in the appropriate suite via MCP tools (`mcp__testlink__create_test_case`)
+- Define steps, expected results, preconditions
+- Include GitHub issue reference in the summary field (e.g., "Related to #N")
+- Record the TestLink external ID (e.g., `ollama37-21`)
+
+### 3. Test Script (YAML)
+- Create executable YAML via `/add-test` skill
+- Must include `testlink_id` and `issue` fields linking back to TestLink and GitHub
+- PR includes the new YAML file
+
+### TestLink Reference
+- Project: ollama37 (ID: 1)
+- Test plan: "CI/CD Pipeline v1.0" (ID: 87)
+- Suites: Build (ID: 2), Inference (ID: 3), Runtime (ID: 39), Models (ID: 122)
+
+### Authorities
+- **TestLink** = design authority (what should be tested, how)
+- **YAML** = execution authority (what actually runs in CI)
+- If they conflict, update YAML to match TestLink
+
 ## Skill Quick Reference
 
 Extracted triggers and key rules from each skill. Use these to recognize when to load a skill, and as a fallback if the Skill tool is unavailable.
@@ -125,7 +160,7 @@ Extracted triggers and key rules from each skill. Use these to recognize when to
 
 ### add-test
 - **Trigger**: New feature or fix needs test coverage
-- **Key info**: YAML test cases in `cicd/tests/testcases/<suite>/`. ID format: `TC-<SUITE>-<NNN>`. Required fields: id, name, suite, priority, timeout, dependencies, steps, criteria.
+- **Key info**: Follows Test Management Flow: User Story → TestLink → YAML. YAML test cases in `cicd/tests/testcases/<suite>/`. ID format: `TC-<SUITE>-<NNN>`. Required fields: id, name, suite, priority, timeout, dependencies, testlink_id, issue, steps, criteria.
 
 ### trace
 - **Trigger**: Investigating unfamiliar code, understanding execution flow, before modifying unknown code

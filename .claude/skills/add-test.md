@@ -6,14 +6,45 @@ argument-hint: <suite> <test-name>
 
 # Add Test
 
-Create a new YAML test case and its spec entry for the ollama37 test framework. Use `/add-test` to create.
+Create a new test case following the **Test Management Flow**: User Story → TestLink → YAML.
 
 ## When to use
 - After implementing a feature that needs test coverage
 - When adding regression tests for a bug fix
 - When expanding test coverage for an existing suite
 
-## Test suites
+## Flow
+
+### 1. Identify the User Story
+- Every test must trace to a GitHub Issue
+- If no issue exists, create one first (or ask the user)
+
+### 2. Create TestLink Test Case
+- Use MCP tools to create the test case in TestLink
+- TestLink is the **design authority** — define steps and expected results here first
+- Include the GitHub issue reference in the summary field
+
+**TestLink reference:**
+| Suite | TestLink Suite ID |
+|-------|------------------|
+| Build | 2 |
+| Inference | 3 |
+| Runtime | 39 |
+| Models | 122 |
+
+**MCP tool:** `mcp__testlink__create_test_case`
+- `project_id`: "1"
+- `suite_id`: suite ID from table above
+- `name`: "TC-<SUITE>-<NNN>: <Descriptive Name>"
+- `summary`: include "Related to #N" for GitHub issue link
+- `steps`: array of `{ actions, expected_results }`
+- `importance`: 1 (low), 2 (medium), 3 (high)
+- `execution_type`: 2 (automated)
+
+### 3. Create YAML Test Script
+YAML is the **execution authority** — what actually runs in CI.
+
+**Test suites:**
 | Suite | Directory | ID prefix |
 |-------|-----------|-----------|
 | build | `cicd/tests/testcases/build/` | TC-BUILD |
@@ -21,7 +52,8 @@ Create a new YAML test case and its spec entry for the ollama37 test framework. 
 | inference | `cicd/tests/testcases/inference/` | TC-INFERENCE |
 | models | `cicd/tests/testcases/models/` | TC-MODELS |
 
-## Test case format (YAML)
+**Test case format (YAML):**
+
 Required fields:
 - `id` — Unique ID (e.g. `TC-BUILD-004`)
 - `name` — Descriptive name
@@ -29,10 +61,12 @@ Required fields:
 - `priority` — Integer (1 = highest)
 - `timeout` — Milliseconds
 - `dependencies` — List of prerequisite test IDs
+- `testlink_id` — TestLink external ID (e.g. `ollama37-21`)
+- `issue` — GitHub issue number (e.g. `28`)
 - `steps` — List of step objects
 - `criteria` — LLM judge criteria string
 
-## Step fields
+**Step fields:**
 - `name` — Step description
 - `command` — Bash command to run
 - `expectPatterns` — List of regex patterns that must match output
@@ -41,5 +75,5 @@ Required fields:
 
 ## Related files
 - Test cases: `cicd/tests/testcases/<suite>/`
-- Specs: `cicd/specs/<suite>.md`
 - Framework docs: `cicd/README.md`
+- TestLink MCP tools: `mcp__testlink__*`
