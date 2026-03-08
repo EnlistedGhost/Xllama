@@ -7,6 +7,8 @@
  * - GPU fallback to CPU mode
  * - Memory allocation warnings
  * - Incorrect but non-crashing output
+ *
+ * Sends structured JSON prompt and uses Ollama JSON mode for reliable parsing.
  */
 
 import axios from 'axios';
@@ -16,7 +18,7 @@ export class LLMJudge {
   private ollamaUrl: string;
   private model: string;
 
-  constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:12b') {
+  constructor(ollamaUrl: string = 'http://localhost:11435', model: string = 'gemma3:12b-judge') {
     this.ollamaUrl = ollamaUrl;
     this.model = model;
   }
@@ -36,92 +38,77 @@ export class LLMJudge {
   }
 
   /**
-   * Format duration for human readability.
+   * Truncate a string to a maximum length.
    */
-  private formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    return `${(ms / 60000).toFixed(1)}min`;
+  private truncate(text: string, limit: number): string {
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '... (truncated)';
   }
 
   /**
-   * Build prompt for LLM evaluation of a single test.
+   * Build structured JSON prompt for LLM evaluation of a single test.
    */
   private buildPrompt(result: TestResult): string {
     const r = result;
-    const stepsSummary = r.steps
-      .map((step, j) => {
-        const status = step.exitCode === 0 ? 'PASS' : 'FAIL';
-        const stepTimeout = r.testCase.steps[j]?.timeout || r.testCase.timeout;
-        return `  ${j + 1}. "${step.name}" - ${status} (exit: ${step.exitCode}, duration: ${this.formatDuration(step.duration)}, timeout: ${this.formatDuration(stepTimeout)})`;
-      })
-      .join('\n');
+    const stdoutLimit = 1000;
+    const stderrLimit = 500;
+    const logsLimit = 3000;
 
-    const allStepsPassed = r.steps.every((s) => s.exitCode === 0);
-    const simpleResult = allStepsPassed ? 'PASS' : 'FAIL';
+    const steps = r.steps.map((step, j) => {
+      const stepDef = r.testCase.steps[j];
+      return {
+        name: step.name,
+        command: step.command.trim(),
+        exit_code: step.exitCode,
+        duration_ms: step.duration,
+        timeout_ms: stepDef?.timeout || r.testCase.timeout,
+        stdout: this.truncate(step.stdout, stdoutLimit),
+        stderr: this.truncate(step.stderr, stderrLimit),
+      };
+    });
 
-    const timeoutMs = r.testCase.timeout;
-    const withinTimeout = r.totalDuration < timeoutMs;
-    const timeoutNote = withinTimeout
-      ? `Total duration ${this.formatDuration(r.totalDuration)} is within timeout of ${this.formatDuration(timeoutMs)}.`
-      : `Total duration ${this.formatDuration(r.totalDuration)} exceeded timeout of ${this.formatDuration(timeoutMs)}.`;
+    const promptData = {
+      role: 'You are a test result evaluator for ollama37 (Ollama fork for Tesla K80 GPU, CUDA compute 3.7). Analyze the test execution data and determine if the test passed or failed.',
+      rules: [
+        'Check step stdout for error responses (e.g. {"error":"model not found"} means FAIL)',
+        'CUBLAS_STATUS_*, cudaMalloc failed, out of memory in logs or stdout → FAIL',
+        'library=cpu in logs means GPU detection failed → FAIL',
+        'CUDA errors with exit code 0 → still FAIL',
+        'flash attention warnings on K80 are acceptable, NOT errors',
+        'For AI-generated text, accept reasonable variations (e.g. "4", "four", "The answer is 4")',
+        'Long durations within timeout are acceptable',
+        'Build times are expected to be long for CUDA compilation',
+      ],
+      test: {
+        id: r.testCase.id,
+        name: r.testCase.name,
+        suite: r.testCase.suite,
+        goal: r.testCase.goal || r.testCase.name,
+        criteria: r.testCase.criteria,
+        timeout_ms: r.testCase.timeout,
+        duration_ms: r.totalDuration,
+      },
+      steps,
+      container_logs: this.truncate(r.logs, logsLimit),
+      respond: {
+        format: 'Respond with a single JSON object',
+        fields: {
+          testId: r.testCase.id,
+          pass: 'true if test meets all criteria, false otherwise',
+          reason: 'Brief explanation of your verdict',
+          evidence: 'Required if pass is false — the exact stdout content or log line that caused failure',
+        },
+      },
+    };
 
-    // Truncate logs to avoid context overflow
-    const logTruncateLimit = 3000;
-    const truncatedLogs =
-      r.logs.length > logTruncateLimit
-        ? r.logs.substring(0, logTruncateLimit) + '\n... (truncated)'
-        : r.logs;
+    const prompt = JSON.stringify(promptData, null, 2);
 
-    process.stderr.write(`  [LLM] Prompt for ${r.testCase.id}: logs ${r.logs.length} chars (truncated to ${Math.min(r.logs.length, logTruncateLimit)})\n`);
+    // Log prompt stats
+    const totalStdout = r.steps.reduce((sum, s) => sum + s.stdout.length, 0);
+    const totalStderr = r.steps.reduce((sum, s) => sum + s.stderr.length, 0);
+    process.stderr.write(`  [LLM] Prompt for ${r.testCase.id}: logs ${r.logs.length} chars, stdout ${totalStdout} chars, stderr ${totalStderr} chars\n`);
 
-    return `You are a test evaluation judge for ollama37, a build of Ollama for Tesla K80 GPUs (CUDA compute 3.7).
-
-Analyze the following test result and determine if it passed or failed based on the criteria provided.
-
-Examine:
-1. The expected criteria
-2. The actual execution logs (stdout, stderr, exit codes)
-3. Whether the output meets the criteria
-
-K80-specific patterns to watch for:
-- "CUBLAS_STATUS_*" errors indicate CUDA issues
-- "library=cpu" means GPU detection failed (should be "library=CUDA")
-- "compute=3.7" confirms K80 GPU detection (expected)
-- "cudaMalloc failed" or "out of memory" indicates VRAM issues
-
-### Test: ${r.testCase.id} - ${r.testCase.name}
-
-**Criteria:**
-${r.testCase.criteria}
-
-**Step Results:**
-${stepsSummary}
-
-**Simple Judge Result:** ${simpleResult} (${allStepsPassed ? 'all steps exit code 0' : 'some steps failed'})
-
-**Timing:** ${timeoutNote}
-${r.testCase.suite === 'build' ? 'Note: Long build times are expected for CUDA compilation on older GPUs.' : ''}
-
-**Execution Logs:**
-\`\`\`
-${truncatedLogs}
-\`\`\`
-
-Respond with a JSON object:
-{"testId": "${r.testCase.id}", "pass": true, "reason": "Brief explanation"}
-
-If the test FAILED:
-{"testId": "${r.testCase.id}", "pass": false, "reason": "Brief explanation", "evidence": "The actual log line that caused failure"}
-
-Important:
-- For AI-generated text, accept reasonable variations (e.g., "4", "four", "The answer is 4")
-- For build/runtime tests, check exit codes AND absence of error messages in logs
-- If logs show CUDA errors even with exit code 0, the test should FAIL
-- Long durations are acceptable if within the configured timeout
-- Be lenient with formatting differences, focus on semantic correctness
-
-Respond ONLY with the JSON object, no other text.`;
+    return prompt;
   }
 
   /**
@@ -139,6 +126,7 @@ Respond ONLY with the JSON object, no other text.`;
         model: this.model,
         prompt,
         stream: false,
+        format: 'json',
         options: {
           temperature: 0.1,
           num_predict: 1024,
@@ -163,25 +151,32 @@ Respond ONLY with the JSON object, no other text.`;
 
     process.stderr.write(`  [LLM] Raw response for ${testId} (${responseText.length} chars): ${responseText.substring(0, 500)}\n`);
 
-    // Extract JSON object from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      process.stderr.write(`  [LLM] WARNING: No JSON object found in response for ${testId}\n`);
-      process.stderr.write(`  [LLM] Full response: ${responseText}\n`);
-      return {
-        testId,
-        pass: false,
-        reason: `LLM response contained no JSON: ${responseText.substring(0, 200)}`,
-      };
-    }
-
     try {
-      const judgment = JSON.parse(jsonMatch[0]) as Judgment;
+      const judgment = JSON.parse(responseText) as Judgment;
 
       // Validate testId matches
       if (judgment.testId !== testId) {
         process.stderr.write(`  [LLM] WARNING: Response testId "${judgment.testId}" doesn't match expected "${testId}"\n`);
         judgment.testId = testId;
+      }
+
+      // Coerce string "true"/"false" to boolean (LLMs often return strings)
+      if (typeof judgment.pass === 'string') {
+        judgment.pass = (judgment.pass as unknown as string).toLowerCase() === 'true';
+      }
+
+      // Validate required fields
+      if (typeof judgment.pass !== 'boolean') {
+        process.stderr.write(`  [LLM] WARNING: Response missing "pass" field for ${testId}\n`);
+        return {
+          testId,
+          pass: false,
+          reason: `LLM response missing "pass" field: ${responseText.substring(0, 200)}`,
+        };
+      }
+
+      if (!judgment.reason) {
+        judgment.reason = judgment.pass ? 'Passed (no reason provided)' : 'Failed (no reason provided)';
       }
 
       return judgment;

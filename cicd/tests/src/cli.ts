@@ -34,7 +34,7 @@ program
   .option('--dry-run', 'Show what would run without executing', false)
   .option('--no-llm', 'Skip LLM judging (simple judge only)')
   .option('--judge-url <url>', 'Ollama URL for LLM judge', 'http://localhost:11435')
-  .option('--judge-model <model>', 'Model to use for LLM judging', 'gemma3:12b')
+  .option('--judge-model <model>', 'Model to use for LLM judging', 'gemma3:12b-judge')
   .option('-o, --output-dir <dir>', 'Output directory for results')
   .option('-f, --format <format>', 'Output format (console, json)', 'console')
   .action(async (options) => {

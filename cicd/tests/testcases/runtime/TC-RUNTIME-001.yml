@@ -4,6 +4,7 @@ suite: runtime
 priority: 1
 timeout: 120000
 dependencies: []
+goal: "Start ollama37 container with GPU passthrough and verify healthy status"
 
 steps:
   - name: Clean up old container

@@ -42,6 +42,8 @@ export interface TestCase {
   testlinkId?: string;
   /** GitHub issue number this test traces to */
   issue?: number;
+  /** One-line test objective for LLM judge context */
+  goal?: string;
   /** Test steps to execute */
   steps: TestStep[];
   /** Human-readable criteria for LLM judge evaluation */
@@ -242,6 +244,6 @@ export const DEFAULT_CONFIG: Partial<RunConfig> = {
   dryRun: false,
   noLlm: false,
   judgeUrl: 'http://localhost:11435',
-  judgeModel: 'gemma3:12b',
+  judgeModel: 'gemma3:12b-judge',
   outputFormat: 'console',
 };
