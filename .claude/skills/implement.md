@@ -1,15 +1,17 @@
 ---
 name: implement
-description: Start work on a GitHub Issue. Use when picking up an issue to implement — creates a branch, links the PR to the issue, updates project board.
+description: Start work on a GitHub Issue. Use when picking up an issue to implement — creates a branch, codes, builds, and tests. This is the IMPLEMENTING state in the Development Lifecycle.
 argument-hint: <issue-number>
 ---
 
 # Implement
 
-Pick up a GitHub Issue and start implementation — create a branch, do the work, create a PR that closes the issue. Use `/implement` to start.
+Pick up a GitHub Issue and start implementation — create a branch, do the work, build, and test. Use `/implement` to start.
+
+**Lifecycle state**: IMPLEMENTING → TESTING (see Development Lifecycle in CLAUDE.md)
 
 ## When to use
-- After `/plan` has created issues
+- After `/plan` has created issues and **user has approved**
 - When the user wants to start working on a specific issue
 
 ## Workflow
@@ -24,6 +26,7 @@ Pick up a GitHub Issue and start implementation — create a branch, do the work
 - Decide flow using `git-flow` skill (branch vs commit-on-main)
 - Create branch: `issue-<N>-<short-slug>` from `main`
 - Comment on the issue: `gh issue comment <N> --body "Starting work on branch \`issue-<N>-<slug>\`"`
+- Add `status:in-progress` label: `gh issue edit <N> --add-label "status:in-progress"`
 
 ### 3. Implement
 - Make the changes
@@ -41,18 +44,14 @@ Pick up a GitHub Issue and start implementation — create a branch, do the work
   `gh issue edit <N> --remove-label "status:blocked"`
 - If stuck after 2-3 attempts, comment with blockers and ask the user
 
-### 5. On success
-- Create PR with `Fixes #N` or `Closes #N` in body
-- Add `status:needs-review` label to issue:
-  `gh issue edit <N> --add-label "status:needs-review"`
-- Comment on issue: `gh issue comment <N> --body "Fix applied in PR #<PR>. Summary: <changes>"`
+### 5. On success (tests pass)
+- Comment on issue: `gh issue comment <N> --body "Implementation complete, tests passing. Ready for PR."`
+- Proceed to `/create-pr` to open a pull request
 
 ### 6. On partial fix
-- Comment: `gh issue comment <N> --body "Partial fix in PR #<PR>. Fixed: <X>. Remaining: <Y>. Blocker: <Z>"`
-
-### 7. After merge
-- Remove status labels: `gh issue edit <N> --remove-label "status:needs-review"`
-- Issue auto-closes via `Fixes #N` in PR body
+- Comment: what was fixed, what remains, and blockers
+- Proceed to `/create-pr` if the partial fix is independently useful
+- Create follow-up issues for remaining work
 
 ## Issue cross-references
 - **Parent/child**: mention in body — `Part of #N` or `Parent: #N`

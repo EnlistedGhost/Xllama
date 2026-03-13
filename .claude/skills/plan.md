@@ -1,11 +1,13 @@
 ---
 name: plan
-description: Break down feature requests into GitHub Issues with labels, priorities, and project board tracking. Use when the user describes a feature, enhancement, removal, or bug to plan and track.
+description: Break down feature requests into GitHub Issues with labels, priorities, and project board tracking. Use when the user describes a feature, enhancement, removal, or bug to plan and track. This is the PLAN state in the Development Lifecycle.
 ---
 
 # Plan
 
 Break down work into GitHub Issues with proper labels, priority, and project board tracking. Use `/plan` to start.
+
+**Lifecycle state**: PLAN → APPROVAL (see Development Lifecycle in CLAUDE.md)
 
 ## When to use
 - User describes a feature, enhancement, or removal request
@@ -88,6 +90,14 @@ As a [role], I want [capability], so that [benefit].
 ## Steps to Reproduce
 1. ...
 ```
+
+## User Approval Gate
+
+After creating issues, **always wait for user approval** before proceeding to implementation:
+1. Present the plan summary table to the user
+2. Ask: "Want me to start on [issue]?" or similar
+3. Do NOT proceed to `/implement` until the user explicitly approves
+4. The user story lives in the GitHub issue body — no separate artifact needed
 
 ## Issue tracking
 - After creating issues, confirm the issue numbers with the user

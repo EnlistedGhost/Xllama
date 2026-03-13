@@ -18,10 +18,11 @@ gh issue view <issue-number>
 git checkout -b issue-<number>-<slug> main
 ```
 
-4. **Comment on the issue**:
+4. **Comment on the issue and set status**:
 
 ```bash
 gh issue comment <N> --body "Starting work on branch \`issue-<N>-<slug>\`"
+gh issue edit <N> --add-label "status:in-progress"
 ```
 
 5. **Implement** — Make the changes based on the issue's acceptance criteria.
@@ -30,31 +31,13 @@ gh issue comment <N> --body "Starting work on branch \`issue-<N>-<slug>\`"
 
 7. **Build and test** — Use `/build` and `/test` or `/ci`.
 
-8. **Create PR** with labels from the issue:
+8. **On success** — Proceed to `/create-pr` to open a pull request.
+
+9. **On failure** — Update the issue:
 
 ```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Summary
-<what was done>
-
-Fixes #<issue-number>
-
-## Test plan
-- [ ] ...
-
-Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)"
+gh issue comment <N> --body "Build/test failure: <what failed, error, root cause>"
+gh issue edit <N> --add-label "status:blocked"
 ```
 
-9. **Update issue status**:
-
-```bash
-gh issue edit <N> --add-label "status:needs-review"
-```
-
-10. **After merge** — clean up labels:
-
-```bash
-gh issue edit <N> --remove-label "status:needs-review"
-```
+Fix, then retry. Remove `status:blocked` after unblocking.

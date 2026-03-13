@@ -30,7 +30,7 @@ Every issue must have **one type label** and **one priority label**. Add compone
 | Type | `feature`, `enhancement`, `bug`, `removal` |
 | Priority | `priority:critical`, `priority:high`, `priority:medium`, `priority:low` |
 | Component | `component:ggml`, `component:cuda`, `component:model`, `component:go`, `component:ci` |
-| Status | `status:blocked`, `status:needs-review` |
+| Status | `status:in-progress`, `status:blocked`, `status:needs-review` |
 
 ### Project Board
 - Project: "ollama37 Development" (project number 2, owner: dogkeeper886)
@@ -43,51 +43,92 @@ GitHub auto-creates backlinks when issues reference each other. Use these patter
 - `Related to #N` — for related issues
 - `Fixes #N` / `Closes #N` — in PR body to auto-close issues on merge
 
-## Implementation Workflow
+## Development Lifecycle
 
-This is the end-to-end flow for working on any project, issue, or story. **Always follow this flow** — it ensures issues stay up to date and failures are tracked.
+The AI agent follows this state machine for all work. **Every state transition updates the GitHub issue** — the issue is the single source of truth.
 
-### 1. Understand
-- Read the issue/story fully (`gh issue view <N>`)
-- Check for linked issues, dependencies, or prior attempts
-- Check labels — priority and component should already be set
-- If anything is unclear, ask the user before starting
+```
+          ┌─────────┐
+          │ REQUEST  │  User describes work
+          └────┬─────┘
+               │
+          ┌────▼─────┐
+          │   PLAN   │  /plan — create user story + GitHub issues
+          └────┬─────┘
+               │
+          ┌────▼─────┐
+          │ APPROVAL │  User reviews and approves plan
+          └────┬─────┘
+               │
+       ┌───────▼────────┐
+       │  IMPLEMENTING   │  /implement — branch, code, build
+       └───┬────────┬────┘
+           │        │
+     ┌─────▼──┐  ┌──▼──────┐
+     │ FAILED │  │ TESTING  │  /test — run integration tests
+     └───┬────┘  └──┬───┬──┘
+         │          │   │
+         │    ┌─────▼┐  │
+         └────► BACK │  │  Fix and retry (update issue)
+              └──────┘  │
+                   ┌────▼──────┐
+                   │ PR CREATED│  /create-pr — push branch, open PR
+                   └────┬──────┘
+                        │
+                   ┌────▼──────┐
+                   │ REVIEWING │  /review-pr — review checklist
+                   └────┬──────┘
+                        │
+                   ┌────▼──────┐
+                   │  MERGED   │  /merge — merge PR, cleanup
+                   └───────────┘
+```
 
-### 2. Start
-- Comment on the issue: work has begun, link the branch
-  `gh issue comment <N> --body "Starting work on branch \`issue-<N>-<slug>\`"`
-- Create branch: `issue-<N>-<short-slug>` from `main`
+### States and Transitions
 
-### 3. Implement
-- Make the changes
-- Build and test locally (load `build`, `test` skills as needed)
+| State | Skill/Command | Entry Action | GitHub Update |
+|-------|--------------|--------------|---------------|
+| **REQUEST** | — | User describes work | — |
+| **PLAN** | `/plan` | Create user story as GitHub issue(s), break into tasks | Issues created, added to project board |
+| **APPROVAL** | — | Present plan to user, wait for approval | — |
+| **IMPLEMENTING** | `/implement` | Create branch, start coding | Comment: "Starting work on branch `issue-N-slug`", add `status:in-progress` |
+| **FAILED** | — | Build/test failed | Comment: what failed + root cause, add `status:blocked` |
+| **TESTING** | `/test` | Run integration tests | Comment: test results |
+| **PR CREATED** | `/create-pr` | Push branch, open PR with `Fixes #N` | Comment: "PR #X created", replace `status:in-progress` → `status:needs-review` |
+| **REVIEWING** | `/review-pr` | Review checklist, request changes or approve | Comment on PR |
+| **MERGED** | `/merge` | Merge PR, delete branch | Remove status labels, issue auto-closes |
 
-### 4. On failure (build fails, test fails, runtime error)
-- **Do NOT silently retry.** Update the issue with what failed and why:
-  `gh issue comment <N> --body "Build/test failure: <what failed, error message, root cause hypothesis>"`
-- Add `status:blocked` label if stuck:
-  `gh issue edit <N> --add-label "status:blocked"`
-- Investigate, apply fix, update the issue again:
-  `gh issue comment <N> --body "Applied fix: <what changed and why>. Retesting."`
-- Remove blocked label after unblocking:
-  `gh issue edit <N> --remove-label "status:blocked"`
-- If stuck after 2-3 attempts, comment with blockers and ask the user
+### Transition Conditions
 
-### 5. On success
-- Create PR referencing the issue: `Fixes #N` or `Closes #N` in the PR body
-- Add `status:needs-review` label:
-  `gh issue edit <N> --add-label "status:needs-review"`
-- Comment on the issue summarizing what was done:
-  `gh issue comment <N> --body "Fix applied in PR #<PR>. Summary: <what changed>"`
+| From | To | Condition |
+|------|----|-----------|
+| REQUEST → PLAN | User describes work | Always |
+| PLAN → APPROVAL | Issues created | Always — never skip user approval |
+| APPROVAL → IMPLEMENTING | User says "yes" / "go" / "start" | User must explicitly approve |
+| IMPLEMENTING → TESTING | Code compiles, no obvious errors | Load `build` skill, verify |
+| IMPLEMENTING → FAILED | Build or runtime error | Do NOT silently retry |
+| FAILED → IMPLEMENTING | Fix applied | Comment fix on issue, remove `status:blocked` |
+| TESTING → PR CREATED | Tests pass | All relevant test suites green |
+| TESTING → FAILED | Tests fail | Comment failure on issue |
+| PR CREATED → REVIEWING | PR opened | Always |
+| REVIEWING → MERGED | Approved | User or reviewer approves |
+| REVIEWING → IMPLEMENTING | Changes requested | Address feedback, re-test |
 
-### 6. On partial fix
-- Comment describing what was fixed, what remains, and blockers:
-  `gh issue comment <N> --body "Partial fix in PR #<PR>. Fixed: <X>. Remaining: <Y>. Blocker: <Z>"`
+### Failure Protocol
 
-### 7. After merge
-- Remove status labels: `gh issue edit <N> --remove-label "status:needs-review"`
-- Issue auto-closes via `Fixes #N` in PR body
-- Delete the branch: `git push origin --delete <branch>`
+When **any step fails** (build, test, runtime):
+1. **Do NOT silently retry.** Comment on the issue: what failed, error message, root cause hypothesis
+2. Add `status:blocked` label if stuck: `gh issue edit <N> --add-label "status:blocked"`
+3. Investigate and apply fix, comment again: what changed and why
+4. Remove `status:blocked` after unblocking: `gh issue edit <N> --remove-label "status:blocked"`
+5. If stuck after 2-3 attempts, comment with blockers and ask the user
+
+### Partial Fix Protocol
+
+When only part of the work is complete:
+- Comment: what was fixed, what remains, and blockers
+- Create PR for the partial fix if it's independently useful
+- Create follow-up issues for remaining work
 
 **Key principle**: The issue is the single source of truth. Anyone reading it should see the full history — start, failures, fixes, and resolution.
 
@@ -152,11 +193,23 @@ Extracted triggers and key rules from each skill. Use these to recognize when to
 
 ### plan
 - **Trigger**: User describes a feature, enhancement, removal, or bug to plan
-- **Key info**: Create issues with type + priority + component labels. Add to project board. Link related issues. Use `gh issue create`.
+- **Key info**: Create user story as GitHub issue. Break into tasks. Add to project board. Wait for user approval before proceeding.
 
 ### implement
-- **Trigger**: Picking up a GitHub Issue to start work
-- **Key info**: See **Implementation Workflow** section above for the full flow. Branch: `issue-<N>-<slug>`. PR: `Fixes #N`. Update labels (`status:blocked`, `status:needs-review`). Update issue on every state change.
+- **Trigger**: Picking up a GitHub Issue to start work (after user approval)
+- **Key info**: See **Development Lifecycle** state machine. Branch: `issue-<N>-<slug>`. Add `status:in-progress`. Update issue on every state change.
+
+### create-pr
+- **Trigger**: Implementation and tests pass, ready to open a pull request
+- **Key info**: Push branch, create PR with `Fixes #N`. Replace `status:in-progress` → `status:needs-review`. Comment PR link on issue.
+
+### review-pr
+- **Trigger**: PR is open and needs review
+- **Key info**: Run review checklist. Check for test coverage, code quality, issue linkage. Approve or request changes.
+
+### merge
+- **Trigger**: PR is approved and ready to merge
+- **Key info**: Merge PR, delete branch, remove status labels. Issue auto-closes via `Fixes #N`.
 
 ### add-test
 - **Trigger**: New feature or fix needs test coverage
@@ -190,7 +243,7 @@ When creating or updating skills and commands, follow the format guides in `.cla
 **Design principle**: Skills define *when* and *what*. Commands define *how* (invoked via `/slash`). Keep executable content in commands, not skills.
 
 ### Skill files (`.claude/skills/`)
-`build`, `debug`, `ci`, `test`, `git-flow`, `plan`, `implement`, `add-test`, `trace`, `instrument`, `profile`, `annotate`
+`build`, `debug`, `ci`, `test`, `git-flow`, `plan`, `implement`, `create-pr`, `review-pr`, `merge`, `add-test`, `trace`, `instrument`, `profile`, `annotate`
 
 ### Slash commands (`.claude/commands/`)
-`/build`, `/debug`, `/ci`, `/test`, `/plan`, `/implement`, `/add-test`, `/trace`, `/instrument`, `/profile`, `/annotate`
+`/build`, `/debug`, `/ci`, `/test`, `/plan`, `/implement`, `/create-pr`, `/review-pr`, `/merge`, `/add-test`, `/trace`, `/instrument`, `/profile`, `/annotate`
