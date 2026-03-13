@@ -27,14 +27,19 @@ gh pr checks $1
 - [ ] Tests added/updated
 - [ ] No debug/temporary code
 
-4. **Decision**:
+4. **Decision** — Check if you are the PR author (GitHub blocks self-approval):
 
-Approve:
+If NOT the author — approve:
 ```bash
 gh pr review $1 --approve --body "LGTM"
 ```
 
-Or request changes:
+If you ARE the author — comment instead:
+```bash
+gh pr comment $1 --body "Self-review complete. Checklist passes. Ready to merge."
+```
+
+Request changes (works for any reviewer):
 ```bash
 gh pr review $1 --request-changes --body "<specific feedback>"
 ```

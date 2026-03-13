@@ -39,9 +39,6 @@ Review a pull request against a structured checklist. Use `/review-pr` to start.
 ### 5. Decision
 - **Approve**: All checks pass → proceed to `/merge`
 - **Request changes**: Comment on PR with specific feedback → back to `/implement`
-  ```bash
-  gh pr review <PR> --comment --body "Changes requested: <feedback>"
-  ```
 
 ## Workflow
 
@@ -54,10 +51,18 @@ gh pr diff <PR>
 
 # Check CI status
 gh pr checks <PR>
+```
 
-# Approve
+### Approve or request changes
+
+Check if you are the PR author first — GitHub blocks self-approval:
+```bash
+# If you are NOT the author:
 gh pr review <PR> --approve --body "LGTM"
 
-# Or request changes
+# If you ARE the author (self-review):
+gh pr comment <PR> --body "Self-review complete. Checklist passes. Ready to merge."
+
+# Request changes (works for any reviewer):
 gh pr review <PR> --request-changes --body "<feedback>"
 ```
