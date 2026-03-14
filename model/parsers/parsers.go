@@ -51,6 +51,8 @@ func ParserForName(name string) Parser {
 	case "qwen3.5":
 		parser := &Qwen3VLParser{hasThinkingSupport: true}
 		return parser
+	case "functiongemma":
+		return &FunctionGemmaParser{}
 	case "passthrough":
 		return &PassthroughParser{}
 	case "harmony":
