@@ -132,6 +132,29 @@ When only part of the work is complete:
 
 **Key principle**: The issue is the single source of truth. Anyone reading it should see the full history — start, failures, fixes, and resolution.
 
+## Continuous Improvement Loop
+
+The project uses a **Trace and Evolve** loop to continuously improve the development workflow. See `docs/workflows/trace-and-evolve.md` for the full design.
+
+```
+Dev Work → GitHub Issues + /session-summary → patterns.md → /evolve → Applied Changes → Next Session
+```
+
+- `/session-summary` — Record friction points and patterns at end of each session
+- `/evolve` — Periodically analyze history and propose evidence-based improvements
+- Reports saved to `docs/evolve/`, session data to `docs/session_summaries/`
+
+## Cross-Repo Sync
+
+Multiple repos share components (commands, skills, test framework, docs). The AI agent determines what's shared by reading both repos — no manifest file needed.
+
+- `/compare <path>` — Detect drift between this repo and a remote repo, optionally create backport issues with `--issue`
+- `/sync <path>` — Pull and adapt shared components from a remote repo with per-component confirmation
+
+### Related Repos
+- `ai-qa-workflow` — Origin of `/evolve`, `/session-summary`; QA automation toolkit
+- `test-framework-template` — Origin of the dual-judge test framework (`cicd/tests/src/`)
+
 ## Test Management Flow
 
 Test cases follow a **requirements-driven** flow: every test traces back to a user story.
@@ -234,6 +257,22 @@ Extracted triggers and key rules from each skill. Use these to recognize when to
 - **Trigger**: After confirming behavior through tracing, profiling, or debugging
 - **Rules**: Only annotate verified behavior. Comment "why" not "what". Tags: `// VERIFIED:`, `// ASSUMPTION:`, `// NOTE:`. Architecture docs in `docs/arch/`.
 
+### evolve
+- **Trigger**: Periodically (weekly or after 5+ sessions), when friction keeps recurring, when CLAUDE.md feels stale
+- **Key info**: 7-phase analysis: collect data → detect patterns → generate insights → evaluate prior actions → propose actions → report → apply. Reports in `docs/evolve/`. See `docs/workflows/trace-and-evolve.md`.
+
+### session-summary
+- **Trigger**: End of a work session, before closing out a multi-step task
+- **Key info**: Privacy-safe session recorder. Captures goal, commands, artifacts, friction points, workflow pattern. Saves to `docs/session_summaries/`. Updates `patterns.md` for `/evolve` consumption.
+
+### compare
+- **Trigger**: Before backporting to another repo, after porting a feature, periodically to detect drift
+- **Key info**: No manifest — AI agent reads both repos to identify shared components by purpose. Classifies as identical/diverged/local-only/remote-only. Optionally creates backport issues in remote repo with `--issue` flag.
+
+### sync
+- **Trigger**: After `/compare` identifies components worth pulling, when user asks to sync from another repo
+- **Key info**: No manifest — AI agent reads both repos, adapts content to fit destination. Shows plan per component. Never auto-applies. Updates CLAUDE.md if new skills/commands added.
+
 ## Skills and Commands
 
 When creating or updating skills and commands, follow the format guides in `.claude/references/`:
@@ -243,7 +282,7 @@ When creating or updating skills and commands, follow the format guides in `.cla
 **Design principle**: Skills define *when* and *what*. Commands define *how* (invoked via `/slash`). Keep executable content in commands, not skills.
 
 ### Skill files (`.claude/skills/`)
-`build`, `debug`, `ci`, `test`, `git-flow`, `plan`, `implement`, `create-pr`, `review-pr`, `merge`, `add-test`, `trace`, `instrument`, `profile`, `annotate`
+`build`, `debug`, `ci`, `test`, `git-flow`, `plan`, `implement`, `create-pr`, `review-pr`, `merge`, `add-test`, `trace`, `instrument`, `profile`, `annotate`, `evolve`, `session-summary`, `compare`, `sync`
 
 ### Slash commands (`.claude/commands/`)
-`/build`, `/debug`, `/ci`, `/test`, `/plan`, `/implement`, `/create-pr`, `/review-pr`, `/merge`, `/add-test`, `/trace`, `/instrument`, `/profile`, `/annotate`
+`/build`, `/debug`, `/ci`, `/test`, `/plan`, `/implement`, `/create-pr`, `/review-pr`, `/merge`, `/add-test`, `/trace`, `/instrument`, `/profile`, `/annotate`, `/evolve`, `/session-summary`, `/compare`, `/sync`
