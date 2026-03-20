@@ -1,4 +1,4 @@
-Run the ollama37 test framework locally. Reference `.claude/skills/test.md` for context.
+Run the ollama37 test framework locally. Reference `.claude/skills/test/SKILL.md` for context.
 
 If the user specifies a suite, run that suite. Otherwise ask which suite or run all.
 

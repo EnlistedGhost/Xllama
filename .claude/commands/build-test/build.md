@@ -1,4 +1,4 @@
-Guide the user through building ollama37. Reference `.claude/skills/build.md` for context.
+Guide the user through building ollama37. Reference `.claude/skills/build/SKILL.md` for context.
 
 If the user specifies "native", show the native build steps.
 If the user specifies "docker", show the Docker container build steps.

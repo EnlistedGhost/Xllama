@@ -281,8 +281,11 @@ When creating or updating skills and commands, follow the format guides in `.cla
 
 **Design principle**: Skills define *when* and *what*. Commands define *how* (invoked via `/slash`). Keep executable content in commands, not skills.
 
-### Skill files (`.claude/skills/`)
+### Skill files (`.claude/skills/<name>/SKILL.md`)
 `build`, `debug`, `ci`, `test`, `git-flow`, `plan`, `implement`, `create-pr`, `review-pr`, `merge`, `add-test`, `trace`, `instrument`, `profile`, `annotate`, `evolve`, `session-summary`, `compare`, `sync`
 
-### Slash commands (`.claude/commands/`)
-`/build`, `/debug`, `/ci`, `/test`, `/plan`, `/implement`, `/create-pr`, `/review-pr`, `/merge`, `/add-test`, `/trace`, `/instrument`, `/profile`, `/annotate`, `/evolve`, `/session-summary`, `/compare`, `/sync`
+### Slash commands (`.claude/commands/<category>/`)
+- **dev-workflow/**: `/plan`, `/implement`, `/create-pr`, `/review-pr`, `/merge`
+- **build-test/**: `/build`, `/debug`, `/test`, `/ci`, `/add-test`
+- **code-analysis/**: `/trace`, `/instrument`, `/profile`, `/annotate`
+- **utility/**: `/evolve`, `/session-summary`, `/compare`, `/sync`

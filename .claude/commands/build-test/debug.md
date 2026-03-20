@@ -1,4 +1,4 @@
-Help the user debug ollama37. Reference `.claude/skills/debug.md` for context.
+Help the user debug ollama37. Reference `.claude/skills/debug/SKILL.md` for context.
 
 Show the relevant commands based on the user's issue.
 

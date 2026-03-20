@@ -1,4 +1,4 @@
-Trace a code path through the codebase. Reference `.claude/skills/trace.md` for context.
+Trace a code path through the codebase. Reference `.claude/skills/trace/SKILL.md` for context.
 
 The user should specify a starting point — a log message, function name, or behavior to trace. If not specified, ask.
 

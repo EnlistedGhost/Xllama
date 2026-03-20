@@ -1,4 +1,4 @@
-Help the user trigger or check CI workflows. Reference `.claude/skills/ci.md` for context.
+Help the user trigger or check CI workflows. Reference `.claude/skills/ci/SKILL.md` for context.
 
 ## Trigger a workflow
 

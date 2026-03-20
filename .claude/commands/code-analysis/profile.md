@@ -1,4 +1,4 @@
-Show profiling commands for the user's scenario. Reference `.claude/skills/profile.md` for context.
+Show profiling commands for the user's scenario. Reference `.claude/skills/profile/SKILL.md` for context.
 
 Ask what they want to profile if not specified:
 - **cpu** — perf record/report commands

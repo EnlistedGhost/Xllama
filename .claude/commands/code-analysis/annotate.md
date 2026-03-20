@@ -1,4 +1,4 @@
-Add verified annotations to the codebase. Reference `.claude/skills/annotate.md` for context.
+Add verified annotations to the codebase. Reference `.claude/skills/annotate/SKILL.md` for context.
 
 The user should specify what to annotate. Options:
 - A specific function or code section

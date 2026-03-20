@@ -1,4 +1,4 @@
-Add timing instrumentation to measure performance. Reference `.claude/skills/instrument.md` for context.
+Add timing instrumentation to measure performance. Reference `.claude/skills/instrument/SKILL.md` for context.
 
 Ask the user which area to instrument if not specified. Common targets:
 - model loading (`load_tensors`, `init_mappings`, `load_all_data`)

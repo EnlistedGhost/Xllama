@@ -1,4 +1,4 @@
-Add a test case to the ollama37 test framework. Reference `.claude/skills/add-test.md` for context.
+Add a test case to the ollama37 test framework. Reference `.claude/skills/add-test/SKILL.md` for context.
 
 The user will provide: **$ARGUMENTS** (suite name and description of what to test)
 
