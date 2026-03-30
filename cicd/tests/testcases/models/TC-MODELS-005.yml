@@ -21,7 +21,7 @@ steps:
         }' | head -c 4000
     expectPatterns:
       - "get_weather"
-      - "tool_calls"
+      - "start_function_call"
     rejectPatterns:
       - "CUBLAS_STATUS"
       - "CUDA error"
@@ -45,8 +45,8 @@ criteria: |
   Prerequisite: Model must be pre-pulled before running this test.
 
   Expected:
-  - API returns JSON with "tool_calls" containing "get_weather" function
-  - Tool call arguments include "location" key
+  - API returns JSON with content containing "<start_function_call>" and "get_weather"
+  - Function call arguments include "location" value
   - GPU memory is allocated (visible in nvidia-smi)
   - No CUDA/CUBLAS errors in output
   - Model unloads successfully
