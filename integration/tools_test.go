@@ -21,10 +21,11 @@ func TestAPIToolCalling(t *testing.T) {
 	defer cleanup()
 
 	minVRAM := map[string]uint64{
-		"qwen3-vl":      16,
-		"gpt-oss:20b":   16,
-		"gpt-oss:120b":  70,
-		"qwen3":         6,
+		"functiongemma:270m": 2,
+		"qwen3-vl":          16,
+		"gpt-oss:20b":       16,
+		"gpt-oss:120b":      70,
+		"qwen3":             6,
 		"llama3.1":      8,
 		"llama3.2":      4,
 		"mistral":       6,

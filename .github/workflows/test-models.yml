@@ -93,6 +93,7 @@ jobs:
           curl -s http://localhost:11434/api/generate -d '{"model":"gemma3:27b","keep_alive":0}' || true
           curl -s http://localhost:11434/api/generate -d '{"model":"deepseek-r1:14b","keep_alive":0}' || true
           curl -s http://localhost:11434/api/generate -d '{"model":"qwen3.5:9b","keep_alive":0}' || true
+          curl -s http://localhost:11434/api/generate -d '{"model":"functiongemma:270m","keep_alive":0}' || true
           echo "Models unloaded"
 
       - name: Upload models results

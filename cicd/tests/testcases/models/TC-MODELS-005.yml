@@ -1,0 +1,52 @@
+id: TC-MODELS-005
+name: FunctionGemma Tool Calling
+suite: models
+priority: 4
+timeout: 600000
+dependencies: []
+testlink_id: pending
+issue: 39
+goal: "Validate FunctionGemma generates valid tool calls on K80 compute 3.7"
+
+steps:
+  - name: Test tool calling via chat API
+    command: |
+      curl -s http://localhost:11434/api/chat \
+        -d '{
+          "model":"functiongemma:270m",
+          "messages":[{"role":"user","content":"Call get_weather with location set to San Francisco."}],
+          "tools":[{"type":"function","function":{"name":"get_weather","description":"Get the current weather in a given location","parameters":{"type":"object","required":["location"],"properties":{"location":{"type":"string","description":"The city and state"}}}}}],
+          "stream":false,
+          "options":{"temperature":0}
+        }' | head -c 4000
+    expectPatterns:
+      - "get_weather"
+      - "tool_calls"
+    rejectPatterns:
+      - "CUBLAS_STATUS"
+      - "CUDA error"
+
+  - name: Check GPU memory
+    command: docker exec ollama37 nvidia-smi --query-compute-apps=pid,used_memory --format=csv
+    expectPatterns:
+      - "[0-9]+ MiB"
+
+  - name: Unload model
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"functiongemma:270m","keep_alive":0}'
+      echo "Model unloaded"
+    expectPatterns:
+      - "Model unloaded"
+
+criteria: |
+  Validate FunctionGemma (270M params) generates valid tool calls on K80 (compute 3.7).
+  This is a small model ideal for CI — fast to load and test.
+  Prerequisite: Model must be pre-pulled before running this test.
+
+  Expected:
+  - API returns JSON with "tool_calls" containing "get_weather" function
+  - Tool call arguments include "location" key
+  - GPU memory is allocated (visible in nvidia-smi)
+  - No CUDA/CUBLAS errors in output
+  - Model unloads successfully

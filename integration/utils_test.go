@@ -261,6 +261,7 @@ var (
 		"snowflake-arctic-embed2",
 	}
 	libraryToolsModels = []string{
+		"functiongemma:270m",
 		"qwen3-vl",
 		"gpt-oss:20b",
 		"gpt-oss:120b",
