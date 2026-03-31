@@ -14,14 +14,14 @@ steps:
       curl -s http://localhost:11434/api/chat \
         -d '{
           "model":"functiongemma:270m",
-          "messages":[{"role":"user","content":"Call get_weather with location set to San Francisco."}],
+          "messages":[{"role":"user","content":"What is the weather in San Francisco?"}],
           "tools":[{"type":"function","function":{"name":"get_weather","description":"Get the current weather in a given location","parameters":{"type":"object","required":["location"],"properties":{"location":{"type":"string","description":"The city and state"}}}}}],
           "stream":false,
           "options":{"temperature":0}
         }' | head -c 4000
     expectPatterns:
       - "get_weather"
-      - "start_function_call"
+      - "San Francisco"
     rejectPatterns:
       - "CUBLAS_STATUS"
       - "CUDA error"
@@ -45,8 +45,8 @@ criteria: |
   Prerequisite: Model must be pre-pulled before running this test.
 
   Expected:
-  - API returns JSON with content containing "<start_function_call>" and "get_weather"
-  - Function call arguments include "location" value
+  - Model maps natural language intent to the correct function (get_weather)
+  - Model extracts the correct argument (San Francisco) from context
   - GPU memory is allocated (visible in nvidia-smi)
   - No CUDA/CUBLAS errors in output
   - Model unloads successfully
