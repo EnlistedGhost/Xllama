@@ -61,6 +61,8 @@ func rendererForName(name string) Renderer {
 		return renderer
 	case "functiongemma":
 		return &FunctionGemmaRenderer{}
+	case "gemma4":
+		return &Gemma4Renderer{useImgTags: RenderImgTags}
 	default:
 		return nil
 	}

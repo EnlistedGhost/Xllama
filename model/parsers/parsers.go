@@ -53,6 +53,10 @@ func ParserForName(name string) Parser {
 		return parser
 	case "functiongemma":
 		return &FunctionGemmaParser{}
+	case "gemma4":
+		return &Gemma4Parser{hasThinkingSupport: true}
+	case "gemma4-no-thinking":
+		return &Gemma4Parser{hasThinkingSupport: false}
 	case "passthrough":
 		return &PassthroughParser{}
 	case "harmony":
