@@ -4,7 +4,7 @@ suite: models
 priority: 4
 timeout: 600000
 dependencies: []
-testlink_id: pending
+testlink_id: ollama37-26
 issue: 39
 goal: "Validate FunctionGemma generates valid tool calls on K80 compute 3.7"
 
