@@ -51,12 +51,12 @@ func (p *Gemma4Parser) HasThinkingSupport() bool {
 	return p.hasThinkingSupport
 }
 
-func (p *Gemma4Parser) Init(tools []api.Tool, lastMessage *api.Message, thinkValue *api.ThinkValue) []api.Tool {
+func (p *Gemma4Parser) Init(tools []api.Tool, lastMessage *api.Message) []api.Tool {
 	p.tools = tools
 
 	prefill := lastMessage != nil && lastMessage.Role == "assistant"
 
-	p.thinkingEnabled = p.HasThinkingSupport() && (thinkValue != nil && thinkValue.Bool())
+	p.thinkingEnabled = p.hasThinkingSupport
 
 	if !p.thinkingEnabled {
 		p.state = Gemma4CollectingContent
