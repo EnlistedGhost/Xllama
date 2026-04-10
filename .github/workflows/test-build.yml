@@ -3,6 +3,10 @@ name: Build Verification
 on:
   workflow_dispatch:
     inputs:
+      test_id:
+        description: "Run a single test by ID (e.g. TC-BUILD-002)"
+        required: false
+        type: string
       judge_mode:
         description: "Test judge mode"
         required: false
@@ -75,7 +79,14 @@ jobs:
           echo "Judge flags: $JUDGE_FLAGS"
 
           # Run tests with JSON output
-          npx tsx src/cli.ts run --suite build $JUDGE_FLAGS --format json > /tmp/build-results.json || true
+          # Build test ID flag if provided
+          ID_FLAG=""
+          if [ -n "${{ inputs.test_id }}" ]; then
+            ID_FLAG="--id ${{ inputs.test_id }}"
+            echo "Running single test: ${{ inputs.test_id }}"
+          fi
+
+          npx tsx src/cli.ts run --suite build $ID_FLAG $JUDGE_FLAGS --format json > /tmp/build-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/build-results.json
