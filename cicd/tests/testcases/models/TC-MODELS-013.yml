@@ -1,0 +1,57 @@
+id: TC-MODELS-013
+name: "ministral-3:3b Model Load (yesterdayDate template function)"
+suite: models
+priority: 2
+timeout: 600000
+dependencies:
+  - TC-RUNTIME-001
+testlink_id: ""
+issue: 49
+goal: "Verify ministral-3:3b loads without template function errors"
+
+steps:
+  - name: Pull model
+    command: |
+      curl -sf http://localhost:11434/api/pull \
+        -d '{"name":"ministral-3:3b"}' --no-buffer \
+        | tail -1
+    timeout: 300000
+    expectPatterns:
+      - "success"
+    rejectPatterns:
+      - "error"
+
+  - name: Test inference
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"ministral-3:3b","prompt":"What is 2+2? Answer briefly.","stream":false}' \
+        | head -c 2000
+    expectPatterns:
+      - "response"
+    rejectPatterns:
+      - "function.*not defined"
+      - "yesterdayDate.*not defined"
+      - "CUBLAS_STATUS"
+      - "CUDA error"
+
+  - name: Unload model
+    command: |
+      curl -s http://localhost:11434/api/generate \
+        -d '{"model":"ministral-3:3b","keep_alive":0}'
+      echo "Model unloaded"
+    expectPatterns:
+      - "Model unloaded"
+
+criteria: |
+  Regression test for GitHub issue #49: ministral-3 fails to load because
+  the template uses {{ yesterdayDate }} which is not defined in the FuncMap.
+
+  Expected:
+  - Model pulls successfully
+  - API returns JSON with "response" field (no template parse error)
+  - No "function not defined" errors
+  - No CUDA/CUBLAS errors
+  - Model unloads successfully
+
+  This test will FAIL on the current codebase (missing yesterdayDate function)
+  and PASS after the fix is applied.
