@@ -116,6 +116,14 @@ jobs:
           curl -s http://localhost:11434/api/generate -d '{"model":"functiongemma:270m","keep_alive":0}' || true
           echo "Models unloaded"
 
+      - name: Capture container logs
+        if: always()
+        run: |
+          docker logs ollama37 --since 30m 2>&1 > /tmp/container-logs.txt
+          echo "--- Memory Analysis ---"
+          grep -E "INSTRUMENT|compute buffer size|graph nodes|graph splits|offload|layers\.|compute graph|model weights|kv cache|total memory|model layout|backoff|layer allocation" /tmp/container-logs.txt > /tmp/memory-analysis.txt || true
+          cat /tmp/memory-analysis.txt
+
       - name: Upload models results
         uses: actions/upload-artifact@v4
         if: always()
@@ -123,4 +131,6 @@ jobs:
           name: models-test-results
           path: |
             /tmp/models-results.json
+            /tmp/container-logs.txt
+            /tmp/memory-analysis.txt
             cicd/results/
