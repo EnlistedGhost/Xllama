@@ -142,7 +142,7 @@ func (r *Gemma4Renderer) renderToolDeclaration(tool api.Tool) string {
 
 		needsComma := false
 
-		if fn.Parameters.Properties != nil && fn.Parameters.Properties.Len() > 0 {
+		if fn.Parameters.Properties != nil && len(fn.Parameters.Properties) > 0 {
 			sb.WriteString("properties:{")
 			r.writeProperties(&sb, fn.Parameters.Properties)
 			sb.WriteString("}")
@@ -178,16 +178,16 @@ func (r *Gemma4Renderer) renderToolDeclaration(tool api.Tool) string {
 	return sb.String()
 }
 
-func (r *Gemma4Renderer) writeProperties(sb *strings.Builder, props *api.ToolPropertiesMap) {
-	keys := make([]string, 0, props.Len())
-	for k := range props.All() {
+func (r *Gemma4Renderer) writeProperties(sb *strings.Builder, props map[string]api.ToolProperty) {
+	keys := make([]string, 0, len(props))
+	for k := range props {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	first := true
 	for _, name := range keys {
-		prop, _ := props.Get(name)
+		prop := props[name]
 		if !first {
 			sb.WriteString(",")
 		}
@@ -227,7 +227,7 @@ func (r *Gemma4Renderer) writeProperties(sb *strings.Builder, props *api.ToolPro
 				// and this does NOT set hasContent — the comma before type:
 				// depends only on whether description was present.
 				sb.WriteString(",properties:{")
-				if prop.Properties != nil && prop.Properties.Len() > 0 {
+				if prop.Properties != nil && len(prop.Properties) > 0 {
 					r.writeProperties(sb, prop.Properties)
 				}
 				sb.WriteString("}")
@@ -297,15 +297,15 @@ func (r *Gemma4Renderer) formatToolCall(tc api.ToolCall) string {
 	var sb strings.Builder
 	sb.WriteString("<|tool_call>call:" + tc.Function.Name + "{")
 
-	keys := make([]string, 0, tc.Function.Arguments.Len())
-	for k := range tc.Function.Arguments.All() {
+	keys := make([]string, 0, len(tc.Function.Arguments))
+	for k := range tc.Function.Arguments {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	first := true
 	for _, key := range keys {
-		value, _ := tc.Function.Arguments.Get(key)
+		value := tc.Function.Arguments[key]
 		if !first {
 			sb.WriteString(",")
 		}

@@ -267,11 +267,13 @@ func (pt PropertyType) String() string {
 }
 
 type ToolProperty struct {
-	AnyOf       []ToolProperty `json:"anyOf,omitempty"`
-	Type        PropertyType   `json:"type,omitempty"`
-	Items       any            `json:"items,omitempty"`
-	Description string         `json:"description,omitempty"`
-	Enum        []any          `json:"enum,omitempty"`
+	AnyOf       []ToolProperty          `json:"anyOf,omitempty"`
+	Type        PropertyType            `json:"type,omitempty"`
+	Items       any                     `json:"items,omitempty"`
+	Description string                  `json:"description,omitempty"`
+	Enum        []any                   `json:"enum,omitempty"`
+	Properties  map[string]ToolProperty `json:"properties,omitempty"`
+	Required    []string                `json:"required,omitempty"`
 }
 
 // ToTypeScriptType converts a ToolProperty to a TypeScript type string
