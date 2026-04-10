@@ -3377,9 +3377,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                         if (hparams.recurrent_layer_arr[i]) {
                             // linear attention (DeltaNet) layer
-                            // GGUF: attn_qkv [n_embd, conv_dim=8192], attn_gate [n_embd, n_embd]
+                            // GGUF: attn_qkv [n_embd, conv_dim], attn_gate [n_embd, ssm_d_inner]
                             layer.wqkv      = create_tensor(tn(LLM_TENSOR_ATTN_QKV,      "weight", i), {n_embd, conv_dim}, 0);
-                            layer.wqkv_gate = create_tensor(tn(LLM_TENSOR_ATTN_QKV_GATE,  "weight", i), {n_embd, n_embd}, 0);
+                            layer.wqkv_gate = create_tensor(tn(LLM_TENSOR_ATTN_QKV_GATE,  "weight", i), {n_embd, ssm_d_inner}, 0);
                             layer.ssm_conv1d   = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {ssm_d_conv, conv_dim}, 0);
                             // GGUF: ssm_dt [n_v_heads] (no "bias" suffix), ssm_a [n_v_heads] (1D)
                             layer.ssm_dt       = create_tensor(tn(LLM_TENSOR_SSM_DT,              i), {n_v_heads}, 0);
