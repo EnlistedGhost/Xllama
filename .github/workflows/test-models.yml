@@ -3,6 +3,10 @@ name: Models Tests
 on:
   workflow_dispatch:
     inputs:
+      test_id:
+        description: "Run a single test by ID (e.g. TC-MODELS-013)"
+        required: false
+        type: string
       judge_mode:
         description: "Test judge mode"
         required: false
@@ -70,8 +74,15 @@ jobs:
           echo "Judge mode: ${{ inputs.judge_mode || 'dual' }}"
           echo "Judge flags: $JUDGE_FLAGS"
 
-          # Run all models tests
-          npx tsx src/cli.ts run --suite models $JUDGE_FLAGS --format json > /tmp/models-results.json || true
+          # Build test ID flag if provided
+          ID_FLAG=""
+          if [ -n "${{ inputs.test_id }}" ]; then
+            ID_FLAG="--id ${{ inputs.test_id }}"
+            echo "Running single test: ${{ inputs.test_id }}"
+          fi
+
+          # Run models tests
+          npx tsx src/cli.ts run --suite models $ID_FLAG $JUDGE_FLAGS --format json > /tmp/models-results.json || true
 
           echo "--- JSON Results ---"
           cat /tmp/models-results.json
