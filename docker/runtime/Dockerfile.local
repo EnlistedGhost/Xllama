@@ -13,6 +13,10 @@
 # Builder image: ollama37-builder contains GCC 10, CUDA 11.4, and build tools
 FROM ollama37-builder AS builder
 
+# GIT_COMMIT invalidates Docker cache when local source changes.
+# Even though COPY detects file changes, cached builder layers above
+# can mask stale builds. This arg ensures rebuild on new commits.
+ARG GIT_COMMIT=HEAD
 # Copy local source code to container
 # Build context should be the repository root
 COPY . /usr/local/src/ollama37

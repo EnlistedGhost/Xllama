@@ -9,9 +9,14 @@
 # Builder image: ollama37-builder contains GCC 10, CUDA 11.4, and build tools
 FROM ollama37-builder AS builder
 
+# GIT_COMMIT busts Docker cache when new commits are pushed to GitHub.
+# Without this, Docker caches the git clone layer and never picks up new code.
+ARG GIT_COMMIT=HEAD
 # Clone ollama37 source code from GitHub
 RUN cd /usr/local/src \
-    && git clone https://github.com/dogkeeper886/ollama37.git
+    && git clone https://github.com/dogkeeper886/ollama37.git \
+    && cd ollama37 \
+    && git checkout ${GIT_COMMIT}
 
 # Set working directory for build
 WORKDIR /usr/local/src/ollama37
