@@ -42,6 +42,8 @@ jobs:
     name: Models Tests
     runs-on: self-hosted
     environment: cicd-1
+    env:
+      OLLAMA37_ROOT: ${{ github.workspace }}
     outputs:
       result: ${{ steps.models-tests.outcome }}
 
