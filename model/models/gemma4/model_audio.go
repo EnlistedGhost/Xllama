@@ -527,7 +527,14 @@ func (cb *AudioConformerBlock) forwardLightConv(ctx ml.Context, x ml.Tensor, opt
 			shifted = x
 		} else {
 			trimmed := x.Slice(ctx, 1, 0, seqLen-shift, 1).Contiguous(ctx)
-			shifted = trimmed.PadExt(ctx, 0, 0, shift, 0, 0, 0, 0, 0)
+			// PadExt equivalent: pad 'shift' zeros before dim 1 (causal padding).
+			// Strategy: pad 'shift' after dim1 (ggml_pad), then roll by slicing
+			// the last 'shift' elements to the front via Concat.
+			padded := trimmed.Pad(ctx, 0, shift, 0, 0)
+			totalLen := seqLen - shift + shift // = seqLen
+			tail := padded.Slice(ctx, 1, totalLen-shift, totalLen, 1).Contiguous(ctx)
+			head := padded.Slice(ctx, 1, 0, totalLen-shift, 1).Contiguous(ctx)
+			shifted = tail.Concat(ctx, head, 1)
 		}
 
 		wk := kernelT.Slice(ctx, 1, k, k+1, 1).Contiguous(ctx) // [D, 1]
