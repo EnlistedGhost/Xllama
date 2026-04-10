@@ -33,7 +33,7 @@ steps:
       - "nvidia-uvm"
 
   - name: Check Ollama GPU detection in logs
-    command: docker compose -f /home/jack/src/ollama37/docker/docker-compose.yml logs 2>&1 | grep -i "inference compute" | tail -5
+    command: docker compose -f ${OLLAMA37_ROOT}/docker/docker-compose.yml logs 2>&1 | grep -i "inference compute" | tail -5
     expectPatterns:
       - "library=CUDA"
       - "compute=3\\.7"

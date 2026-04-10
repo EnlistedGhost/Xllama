@@ -9,7 +9,7 @@ goal: "Build the ollama37 runtime Docker image from local source without errors"
 
 steps:
   - name: Navigate and build runtime image
-    command: cd /home/jack/src/ollama37/docker && OLLAMA_VERSION=${OLLAMA_VERSION:-0.0.0} make build-runtime-local 2>&1
+    command: cd ${OLLAMA37_ROOT}/docker && OLLAMA_VERSION=${OLLAMA_VERSION:-0.0.0} make build-runtime-local-no-cache 2>&1
     timeout: 1800000
     expectPatterns:
       - "Runtime image built successfully"

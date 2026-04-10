@@ -8,10 +8,10 @@ goal: "Start ollama37 container with GPU passthrough and verify healthy status"
 
 steps:
   - name: Clean up old container
-    command: cd /home/jack/src/ollama37/docker && docker compose down 2>/dev/null || true
+    command: cd ${OLLAMA37_ROOT}/docker && docker compose down 2>/dev/null || true
 
   - name: Start container
-    command: cd /home/jack/src/ollama37/docker && docker compose up -d
+    command: cd ${OLLAMA37_ROOT}/docker && docker compose up -d
     rejectPatterns:
       - "error"
       - "Error"
@@ -35,7 +35,7 @@ steps:
       - "Container is healthy"
 
   - name: Check container status
-    command: docker compose -f /home/jack/src/ollama37/docker/docker-compose.yml ps
+    command: docker compose -f ${OLLAMA37_ROOT}/docker/docker-compose.yml ps
     expectPatterns:
       - "ollama37"
       - "Up"

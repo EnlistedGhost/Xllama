@@ -40,6 +40,7 @@ jobs:
     environment: cicd-1
     env:
       OLLAMA_VERSION: ${{ vars.OLLAMA_VERSION || '0.0.0' }}
+      OLLAMA37_ROOT: ${{ github.workspace }}
     outputs:
       result: ${{ steps.build-tests.outcome }}
 
