@@ -1,7 +1,11 @@
 name: Model Pull
 
 on:
-  # Schedule removed — all models pulled on 2026-04-10
+  schedule:
+    # Saturday — pull remaining models
+    - cron: '0 1 * * 6'
+    - cron: '0 2 * * 6'
+    - cron: '0 3 * * 6'   # catch-up for any missed pulls
   workflow_dispatch:
     inputs:
       model:
@@ -21,26 +25,21 @@ jobs:
           if [ -n "${{ inputs.model }}" ]; then
             echo "model=${{ inputs.model }}" >> $GITHUB_OUTPUT
           else
-            # Map schedule hour (UTC) to model
+            # Map schedule time (UTC) to model
             HOUR=$(date -u +%H)
             case "$HOUR" in
-              17) MODEL="gemma4:e4b" ;;
-              18) MODEL="gemma4:26b" ;;
-              19) MODEL="deepseek-r1:32b" ;;
-              20) MODEL="qwen3.5:27b" ;;
-              21) MODEL="qwen3-vl:8b" ;;
-              22) MODEL="qwen3-vl:30b" ;;
+              01) MODEL="deepseek-r1:32b" ;;
+              02) MODEL="gemma4:e4b" ;;
+              03) MODEL="deepseek-r1:32b gemma4:e4b" ;;  # catch-up
               *)  MODEL="" ;;
             esac
             echo "model=$MODEL" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check if model needs pulling
-        id: check
+      - name: Pull models
         if: steps.select.outputs.model != ''
         run: |
-          MODEL="${{ steps.select.outputs.model }}"
-          echo "Target: $MODEL"
+          MODELS="${{ steps.select.outputs.model }}"
 
           if ! curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
             echo "::error::ollama server is not reachable"
@@ -48,35 +47,29 @@ jobs:
           fi
 
           EXISTING=$(curl -s http://localhost:11434/api/tags | jq -r '.models[].name')
-          if echo "$EXISTING" | grep -q "^${MODEL}$"; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⏭ $MODEL already installed"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "⬇ $MODEL needs pulling"
-          fi
 
-      - name: Pull model
-        if: steps.select.outputs.model != '' && steps.check.outputs.skip != 'true'
-        run: |
-          MODEL="${{ steps.select.outputs.model }}"
-          echo "Pulling $MODEL..."
-          curl -sf http://localhost:11434/api/pull -d "{\"name\":\"$MODEL\"}" --no-buffer | while read -r line; do
-            status=$(echo "$line" | jq -r '.status // empty' 2>/dev/null)
-            completed=$(echo "$line" | jq -r '.completed // empty' 2>/dev/null)
-            total=$(echo "$line" | jq -r '.total // empty' 2>/dev/null)
-            if [ -n "$completed" ] && [ -n "$total" ] && [ "$total" != "0" ]; then
-              pct=$((completed * 100 / total))
-              printf "\r  %s: %d%%" "$status" "$pct"
-            elif [ -n "$status" ]; then
-              echo "  $status"
+          for MODEL in $MODELS; do
+            if echo "$EXISTING" | grep -q "^${MODEL}$"; then
+              echo "⏭ $MODEL already installed"
+              continue
             fi
-          done
-          echo ""
-          echo "✓ $MODEL pulled"
 
-      - name: Verify
-        if: steps.select.outputs.model != ''
-        run: |
+            echo "⬇ Pulling $MODEL..."
+            curl -sf http://localhost:11434/api/pull -d "{\"name\":\"$MODEL\"}" --no-buffer | while read -r line; do
+              status=$(echo "$line" | jq -r '.status // empty' 2>/dev/null)
+              completed=$(echo "$line" | jq -r '.completed // empty' 2>/dev/null)
+              total=$(echo "$line" | jq -r '.total // empty' 2>/dev/null)
+              if [ -n "$completed" ] && [ -n "$total" ] && [ "$total" != "0" ]; then
+                pct=$((completed * 100 / total))
+                printf "\r  %s: %d%%" "$status" "$pct"
+              elif [ -n "$status" ]; then
+                echo "  $status"
+              fi
+            done
+            echo ""
+            echo "✓ $MODEL pulled"
+          done
+
+          echo ""
           echo "Installed models:"
           curl -s http://localhost:11434/api/tags | jq -r '.models[] | "\(.name)\t\(.size / 1073741824 * 100 | floor / 100)GB"'
