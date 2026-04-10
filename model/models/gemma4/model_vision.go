@@ -31,7 +31,7 @@ func scalarValue(t ml.Tensor) (float32, bool) {
 		return 0, false
 	}
 
-	data := t.BackendGet()
+	data := t.Floats()
 	if len(data) == 0 {
 		return 0, false
 	}
@@ -124,7 +124,7 @@ func (m *VisionModel) InitClamp(proj *MultiModalProjector) {
 	}
 
 	// Read all clamp values from packed F32 tensor
-	data := m.ClampData.BackendGet()
+	data := m.ClampData.Floats()
 	if len(data) == 0 {
 		return
 	}
@@ -226,7 +226,8 @@ type VisionMLP struct {
 func (mlp *VisionMLP) Forward(ctx ml.Context, hiddenState ml.Tensor) ml.Tensor {
 	gate := mlp.Gate.Forward(ctx, hiddenState)
 	up := mlp.Up.Forward(ctx, hiddenState)
-	hiddenState = gate.QuickGELU(ctx, up)
+	// QuickGELU: x * sigmoid(1.702 * x), then multiply by up
+	hiddenState = gate.Scale(ctx, 1.702).Sigmoid(ctx).Mul(ctx, gate).Mul(ctx, up)
 	return mlp.Down.Forward(ctx, hiddenState)
 }
 

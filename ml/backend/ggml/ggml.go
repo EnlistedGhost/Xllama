@@ -1505,6 +1505,58 @@ func (t *Tensor) View(ctx ml.Context, offset int, shape ...int) ml.Tensor {
 	}
 }
 
+func (t *Tensor) Slice(ctx ml.Context, dim, start, end, stride int) ml.Tensor {
+	nDims := int(C.ggml_n_dims(t.t))
+	if dim < 0 || dim >= nDims {
+		panic("Slice: dimension out of range")
+	}
+
+	sliceLen := (end - start + stride - 1) / stride
+	offset := start * t.Stride(dim)
+
+	// Build shape/stride pairs for View: [ne0, nb1, ne1, nb2, ne2, ...]
+	// View expects interleaved (shape, stride) pairs after the first dimension
+	switch nDims {
+	case 1:
+		return t.View(ctx, offset, sliceLen)
+	case 2:
+		ne := [2]int{t.Dim(0), t.Dim(1)}
+		nb := [2]int{t.Stride(0), t.Stride(1)}
+		ne[dim] = sliceLen
+		return &Tensor{
+			b: t.b,
+			t: C.ggml_view_2d(ctx.(*Context).ctx, t.t,
+				C.int64_t(ne[0]), C.int64_t(ne[1]),
+				C.size_t(nb[1]),
+				C.size_t(offset)),
+		}
+	case 3:
+		ne := [3]int{t.Dim(0), t.Dim(1), t.Dim(2)}
+		nb := [3]int{t.Stride(0), t.Stride(1), t.Stride(2)}
+		ne[dim] = sliceLen
+		return &Tensor{
+			b: t.b,
+			t: C.ggml_view_3d(ctx.(*Context).ctx, t.t,
+				C.int64_t(ne[0]), C.int64_t(ne[1]), C.int64_t(ne[2]),
+				C.size_t(nb[1]), C.size_t(nb[2]),
+				C.size_t(offset)),
+		}
+	case 4:
+		ne := [4]int{t.Dim(0), t.Dim(1), t.Dim(2), t.Dim(3)}
+		nb := [4]int{t.Stride(0), t.Stride(1), t.Stride(2), t.Stride(3)}
+		ne[dim] = sliceLen
+		return &Tensor{
+			b: t.b,
+			t: C.ggml_view_4d(ctx.(*Context).ctx, t.t,
+				C.int64_t(ne[0]), C.int64_t(ne[1]), C.int64_t(ne[2]), C.int64_t(ne[3]),
+				C.size_t(nb[1]), C.size_t(nb[2]), C.size_t(nb[3]),
+				C.size_t(offset)),
+		}
+	default:
+		panic("Slice: unsupported number of dimensions")
+	}
+}
+
 func (t *Tensor) RoPE(ctx ml.Context, positions ml.Tensor, ropeDim int, ropeBase, ropeScale float32, options ...func(*rope.Options)) ml.Tensor {
 	// Default options
 	opts := rope.Options{Factors: &Tensor{}}

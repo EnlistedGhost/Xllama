@@ -20,6 +20,12 @@ COPY . /usr/local/src/ollama37
 # Set working directory for build
 WORKDIR /usr/local/src/ollama37
 
+# GIT_COMMIT invalidates all subsequent layers when the commit hash changes.
+# Docker only busts cache on ARG when it's used in a RUN instruction.
+# Without this, COPY and subsequent RUN layers can be cached even when source changes.
+ARG GIT_COMMIT=HEAD
+RUN echo "Build commit: ${GIT_COMMIT}" > /tmp/build-commit
+
 # Configure build with CMake
 # Use "CUDA 11 K80" preset: compiles native CUBIN for sm_37 (no PTX JIT needed)
 # The "CUDA 11" preset only embeds PTX (37-virtual), requiring ~3-4 min of JIT

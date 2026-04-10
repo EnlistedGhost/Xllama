@@ -426,7 +426,7 @@ func repairGemma4ToolCallArgs(argsStr, toolName string, tools []api.Tool) (api.T
 	return api.ToolCallFunctionArguments{}, errors.New("repair failed to produce valid JSON arguments")
 }
 
-func gemma4ToolProperties(toolName string, tools []api.Tool) *api.ToolPropertiesMap {
+func gemma4ToolProperties(toolName string, tools []api.Tool) map[string]api.ToolProperty {
 	for i := range tools {
 		if tools[i].Function.Name == toolName {
 			return tools[i].Function.Parameters.Properties
@@ -590,7 +590,7 @@ func repairGemma4RawTerminalStringValue(argsStr, toolName string, tools []api.To
 		return "", false
 	}
 
-	for key, prop := range props.All() {
+	for key, prop := range props {
 		if !gemma4PropertyAcceptsString(prop) {
 			continue
 		}
@@ -603,7 +603,7 @@ func repairGemma4RawTerminalStringValue(argsStr, toolName string, tools []api.To
 	return "", false
 }
 
-func repairGemma4RawTerminalStringValueForKey(s, key string, props *api.ToolPropertiesMap) (string, bool) {
+func repairGemma4RawTerminalStringValueForKey(s, key string, props map[string]api.ToolProperty) (string, bool) {
 	for searchStart := 0; searchStart < len(s); {
 		valueStart, ok := gemma4FindValueStartForKey(s, key, searchStart)
 		if !ok {
@@ -659,7 +659,7 @@ func gemma4FindValueStartForKey(s, key string, searchStart int) (int, bool) {
 	return 0, false
 }
 
-func gemma4RawStringValueEnd(s string, start int, props *api.ToolPropertiesMap) int {
+func gemma4RawStringValueEnd(s string, start int, props map[string]api.ToolProperty) int {
 	for i := start; i < len(s); i++ {
 		if s[i] != ',' {
 			continue
@@ -680,7 +680,7 @@ func gemma4RawStringValueEnd(s string, start int, props *api.ToolPropertiesMap) 
 
 		colon := gemma4SkipSpace(s, keyEnd)
 		if colon < len(s) && s[colon] == ':' {
-			if _, ok := props.Get(s[keyStart:keyEnd]); ok {
+			if _, ok := props[s[keyStart:keyEnd]]; ok {
 				return i
 			}
 		}

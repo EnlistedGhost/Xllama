@@ -96,7 +96,7 @@ func New(c fs.Config) (model.Model, error) {
 	slog.Info("gemma4: token IDs", "image", imageTokenID, "image_end", imageEndTokenID, "audio", audioTokenID, "audio_end", audioEndTokenID)
 
 	m := Model{
-		Tokenizer:                t,
+		TextProcessor:            t,
 		TextModel:                newTextModel(c),
 		VisionModel:              newVisionModel(c),
 		AudioModel:               newAudioModel(c),

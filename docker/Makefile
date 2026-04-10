@@ -81,7 +81,8 @@ build-runtime: ensure-builder
 	@echo "→ Building runtime image..."
 	@echo "  Image: $(RUNTIME_IMAGE):$(RUNTIME_TAG)"
 	@echo "  Dockerfile: $(RUNTIME_DOCKERFILE)"
-	@echo "  Source: GitHub (uses cache)"
+	@echo "  Source: GitHub (cache-busted by commit hash)"
+	@echo "  Commit: $(shell git rev-parse HEAD)"
 	@echo ""
 	@echo "  This will:"
 	@echo "    - Clone ollama37 source from GitHub"
@@ -92,6 +93,7 @@ build-runtime: ensure-builder
 	@echo ""
 	@docker build \
 		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
+		--build-arg GIT_COMMIT=$(shell git rev-parse HEAD) \
 		-f $(RUNTIME_DOCKERFILE) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
@@ -119,6 +121,7 @@ build-runtime-no-cache: ensure-builder
 	@echo ""
 	@docker build --no-cache \
 		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
+		--build-arg GIT_COMMIT=$(shell git rev-parse HEAD) \
 		-f $(RUNTIME_DOCKERFILE) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
@@ -145,6 +148,7 @@ build-runtime-local: ensure-builder
 	@echo ""
 	@docker build \
 		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
+		--build-arg GIT_COMMIT=$(shell git rev-parse HEAD) \
 		-f $(RUNTIME_DOCKERFILE_LOCAL) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
@@ -172,6 +176,7 @@ build-runtime-local-no-cache: ensure-builder
 	@echo ""
 	@docker build --no-cache \
 		--build-arg OLLAMA_VERSION=$(OLLAMA_VERSION) \
+		--build-arg GIT_COMMIT=$(shell git rev-parse HEAD) \
 		-f $(RUNTIME_DOCKERFILE_LOCAL) \
 		-t $(RUNTIME_IMAGE):$(RUNTIME_TAG) \
 		$(RUNTIME_CONTEXT)
