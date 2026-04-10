@@ -112,25 +112,25 @@ func (l *AudioClippableLinear) loadClamps() {
 	}
 	l.clampsLoaded = true
 	if l.InputMin != nil {
-		vals := l.InputMin.BackendGet()
+		vals := l.InputMin.Floats()
 		if len(vals) > 0 {
 			l.inMin = vals[0]
 		}
 	}
 	if l.InputMax != nil {
-		vals := l.InputMax.BackendGet()
+		vals := l.InputMax.Floats()
 		if len(vals) > 0 {
 			l.inMax = vals[0]
 		}
 	}
 	if l.OutputMin != nil {
-		vals := l.OutputMin.BackendGet()
+		vals := l.OutputMin.Floats()
 		if len(vals) > 0 {
 			l.outMin = vals[0]
 		}
 	}
 	if l.OutputMax != nil {
-		vals := l.OutputMax.BackendGet()
+		vals := l.OutputMax.Floats()
 		if len(vals) > 0 {
 			l.outMax = vals[0]
 		}

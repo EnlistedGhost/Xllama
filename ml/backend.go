@@ -206,6 +206,9 @@ type Tensor interface {
 	Sqr(ctx Context) Tensor
 	Sqrt(ctx Context) Tensor
 	Clamp(ctx Context, min, max float32) Tensor
+
+	// Slice extracts a sub-tensor along the given dimension from start to end with stride.
+	Slice(ctx Context, dim, start, end, stride int) Tensor
 }
 
 // ScaledDotProductAttention implements a fused attention
