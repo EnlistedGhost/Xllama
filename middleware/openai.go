@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/ollama/ollama/api"
 	"github.com/ollama/ollama/openai"
@@ -75,22 +77,29 @@ func (w *ChatWriter) writeResponse(data []byte) (int, error) {
 
 	// chat chunk
 	if w.stream {
-		c := openai.ToChunk(w.id, chatResponse, w.toolCallSent)
-		d, err := json.Marshal(c)
-		if err != nil {
-			return 0, err
-		}
-		if !w.toolCallSent && len(c.Choices) > 0 && len(c.Choices[0].Delta.ToolCalls) > 0 {
-			w.toolCallSent = true
-		}
-
+		chunks := openai.ToChunks(w.id, chatResponse, w.toolCallSent)
 		w.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
-		_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", d)))
-		if err != nil {
-			return 0, err
+		for _, c := range chunks {
+			d, err := json.Marshal(c)
+			if err != nil {
+				return 0, err
+			}
+			if !w.toolCallSent && len(c.Choices) > 0 && len(c.Choices[0].Delta.ToolCalls) > 0 {
+				w.toolCallSent = true
+			}
+			_, err = w.ResponseWriter.Write([]byte(fmt.Sprintf("data: %s\n\n", d)))
+			if err != nil {
+				return 0, err
+			}
 		}
 
 		if chatResponse.Done {
+			c := openai.ToChunk(w.id, chatResponse, w.toolCallSent)
+			if len(chunks) > 0 {
+				c = chunks[len(chunks)-1]
+			} else {
+				slog.Warn("ToChunks returned no chunks; falling back to ToChunk for usage chunk", "id", w.id, "model", chatResponse.Model)
+			}
 			if w.streamOptions != nil && w.streamOptions.IncludeUsage {
 				u := openai.ToUsage(chatResponse)
 				c.Usage = &u
@@ -496,6 +505,17 @@ func (w *ResponsesWriter) Write(data []byte) (int, error) {
 
 func ResponsesMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.GetHeader("Content-Encoding") == "zstd" {
+			reader, err := zstd.NewReader(c.Request.Body, zstd.WithDecoderMaxMemory(8<<20))
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusBadRequest, openai.NewError(http.StatusBadRequest, "failed to decompress zstd body"))
+				return
+			}
+			defer reader.Close()
+			c.Request.Body = io.NopCloser(reader)
+			c.Request.Header.Del("Content-Encoding")
+		}
+
 		var req openai.ResponsesRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, openai.NewError(http.StatusBadRequest, err.Error()))

@@ -1,5 +1,3 @@
-//go:build mlx
-
 // Package qwen3 provides a shared Qwen3 text encoder used by multiple image generation models.
 package qwen3
 
@@ -7,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/ollama/ollama/x/imagegen"
+	"github.com/ollama/ollama/x/imagegen/manifest"
 	"github.com/ollama/ollama/x/imagegen/mlx"
 	"github.com/ollama/ollama/x/imagegen/nn"
 	"github.com/ollama/ollama/x/imagegen/safetensors"
@@ -181,19 +179,19 @@ type TextEncoder struct {
 }
 
 // Load loads the Qwen3 text encoder from ollama blob storage.
-func (m *TextEncoder) Load(manifest *imagegen.ModelManifest, configPath string) error {
+func (m *TextEncoder) Load(modelManifest *manifest.ModelManifest, configPath string) error {
 	fmt.Print("  Loading text encoder... ")
 
 	// Load config from blob
 	var cfg Config
-	if err := manifest.ReadConfigJSON(configPath, &cfg); err != nil {
+	if err := modelManifest.ReadConfigJSON(configPath, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
 	m.Config = &cfg
 	m.Layers = make([]*Block, cfg.NumHiddenLayers)
 
 	// Load weights from tensor blobs
-	weights, err := imagegen.LoadWeightsFromManifest(manifest, "text_encoder")
+	weights, err := manifest.LoadWeightsFromManifest(modelManifest, "text_encoder")
 	if err != nil {
 		return fmt.Errorf("weights: %w", err)
 	}

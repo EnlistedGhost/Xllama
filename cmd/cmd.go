@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -29,6 +30,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/mattn/go-runewidth"
 	"github.com/olekukonko/tablewriter"
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/errgroup"
@@ -36,8 +38,11 @@ import (
 
 	"github.com/ollama/ollama/api"
 	"github.com/ollama/ollama/cmd/config"
+	"github.com/ollama/ollama/cmd/launch"
+	"github.com/ollama/ollama/cmd/tui"
 	"github.com/ollama/ollama/envconfig"
 	"github.com/ollama/ollama/format"
+	"github.com/ollama/ollama/internal/modelref"
 	"github.com/ollama/ollama/parser"
 	"github.com/ollama/ollama/progress"
 	"github.com/ollama/ollama/readline"
@@ -52,7 +57,44 @@ import (
 	"github.com/ollama/ollama/x/imagegen"
 )
 
-const ConnectInstructions = "To sign in, navigate to:\n    %s\n\n"
+func init() {
+	// Override default selectors to use Bubbletea TUI instead of raw terminal I/O.
+	launch.DefaultSingleSelector = func(title string, items []launch.ModelItem, current string) (string, error) {
+		tuiItems := tui.ReorderItems(tui.ConvertItems(items))
+		result, err := tui.SelectSingle(title, tuiItems, current)
+		if errors.Is(err, tui.ErrCancelled) {
+			return "", launch.ErrCancelled
+		}
+		return result, err
+	}
+
+	launch.DefaultMultiSelector = func(title string, items []launch.ModelItem, preChecked []string) ([]string, error) {
+		tuiItems := tui.ReorderItems(tui.ConvertItems(items))
+		result, err := tui.SelectMultiple(title, tuiItems, preChecked)
+		if errors.Is(err, tui.ErrCancelled) {
+			return nil, launch.ErrCancelled
+		}
+		return result, err
+	}
+
+	launch.DefaultSignIn = func(modelName, signInURL string) (string, error) {
+		userName, err := tui.RunSignIn(modelName, signInURL)
+		if errors.Is(err, tui.ErrCancelled) {
+			return "", launch.ErrCancelled
+		}
+		return userName, err
+	}
+
+	launch.DefaultConfirmPrompt = func(prompt string) (bool, error) {
+		ok, err := tui.RunConfirm(prompt)
+		if errors.Is(err, tui.ErrCancelled) {
+			return false, launch.ErrCancelled
+		}
+		return ok, err
+	}
+}
+
+const ConnectInstructions = "If your browser did not open, navigate to:\n    %s\n\n"
 
 // ensureThinkingSupport emits a warning if the model does not advertise thinking support
 func ensureThinkingSupport(ctx context.Context, client *api.Client, name string) {
@@ -91,6 +133,17 @@ func getModelfileName(cmd *cobra.Command) (string, error) {
 	return absName, nil
 }
 
+// isLocalhost returns true if the configured Ollama host is a loopback or unspecified address.
+func isLocalhost() bool {
+	host := envconfig.Host()
+	h, _, _ := net.SplitHostPort(host.Host)
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
 func CreateHandler(cmd *cobra.Command, args []string) error {
 	p := progress.NewProgress(os.Stderr)
 	defer p.Stop()
@@ -105,6 +158,9 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 	// Check for --experimental flag for safetensors model creation
 	experimental, _ := cmd.Flags().GetBool("experimental")
 	if experimental {
+		if !isLocalhost() {
+			return errors.New("remote safetensor model creation not yet supported")
+		}
 		// Get Modelfile content - either from -f flag or default to "FROM ."
 		var reader io.Reader
 		filename, err := getModelfileName(cmd)
@@ -128,25 +184,9 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to parse Modelfile: %w", err)
 		}
 
-		// Extract FROM path and configuration
-		var modelDir string
-		mfConfig := &xcreateclient.ModelfileConfig{}
-
-		for _, cmd := range modelfile.Commands {
-			switch cmd.Name {
-			case "model":
-				modelDir = cmd.Args
-			case "template":
-				mfConfig.Template = cmd.Args
-			case "system":
-				mfConfig.System = cmd.Args
-			case "license":
-				mfConfig.License = cmd.Args
-			}
-		}
-
-		if modelDir == "" {
-			modelDir = "."
+		modelDir, mfConfig, err := xcreateclient.ConfigFromModelfile(modelfile)
+		if err != nil {
+			return err
 		}
 
 		// Resolve relative paths based on Modelfile location
@@ -170,6 +210,9 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 		if filename == "" {
 			// No Modelfile found - check if current directory is an image gen model
 			if create.IsTensorModelDir(".") {
+				if !isLocalhost() {
+					return errors.New("remote safetensor model creation not yet supported")
+				}
 				quantize, _ := cmd.Flags().GetString("quantize")
 				return xcreateclient.CreateModel(xcreateclient.CreateOptions{
 					ModelName: modelName,
@@ -362,18 +405,35 @@ func loadOrUnloadModel(cmd *cobra.Command, opts *runOptions) error {
 		return err
 	}
 
+	requestedCloud := modelref.HasExplicitCloudSource(opts.Model)
+
 	if info, err := client.Show(cmd.Context(), &api.ShowRequest{Model: opts.Model}); err != nil {
 		return err
-	} else if info.RemoteHost != "" {
+	} else if info.RemoteHost != "" || requestedCloud {
 		// Cloud model, no need to load/unload
-		if opts.ShowConnect {
-			p.StopAndClear()
-			if strings.HasPrefix(info.RemoteHost, "https://ollama.com") {
-				fmt.Fprintf(os.Stderr, "Connecting to '%s' on 'ollama.com' ⚡\n", info.RemoteModel)
-			} else {
-				fmt.Fprintf(os.Stderr, "Connecting to '%s' on '%s'\n", info.RemoteModel, info.RemoteHost)
+
+		isCloud := requestedCloud || strings.HasPrefix(info.RemoteHost, "https://ollama.com")
+
+		// Check if user is signed in for ollama.com cloud models
+		if isCloud {
+			if _, err := client.Whoami(cmd.Context()); err != nil {
+				return err
 			}
 		}
+
+		if opts.ShowConnect {
+			p.StopAndClear()
+			remoteModel := info.RemoteModel
+			if remoteModel == "" {
+				remoteModel = opts.Model
+			}
+			if isCloud {
+				fmt.Fprintf(os.Stderr, "Connecting to '%s' on 'ollama.com' ⚡\n", remoteModel)
+			} else {
+				fmt.Fprintf(os.Stderr, "Connecting to '%s' on '%s'\n", remoteModel, info.RemoteHost)
+			}
+		}
+
 		return nil
 	}
 
@@ -440,6 +500,20 @@ func generateEmbedding(cmd *cobra.Command, modelName, input string, keepAlive *a
 	fmt.Println(string(output))
 
 	return nil
+}
+
+// TODO(parthsareen): consolidate with TUI signin flow
+func handleCloudAuthorizationError(err error) bool {
+	var authErr api.AuthorizationError
+	if errors.As(err, &authErr) && authErr.StatusCode == http.StatusUnauthorized {
+		fmt.Printf("You need to be signed in to Ollama to run Cloud models.\n\n")
+		if authErr.SigninURL != "" {
+			fmt.Printf(ConnectInstructions, authErr.SigninURL)
+		}
+		return true
+	}
+
+	return false
 }
 
 func RunHandler(cmd *cobra.Command, args []string) error {
@@ -538,12 +612,16 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 
 	name := args[0]
+	requestedCloud := modelref.HasExplicitCloudSource(name)
 
 	info, err := func() (*api.ShowResponse, error) {
 		showReq := &api.ShowRequest{Name: name}
 		info, err := client.Show(cmd.Context(), showReq)
 		var se api.StatusError
 		if errors.As(err, &se) && se.StatusCode == http.StatusNotFound {
+			if requestedCloud {
+				return nil, err
+			}
 			if err := PullHandler(cmd, []string{name}); err != nil {
 				return nil, err
 			}
@@ -552,6 +630,9 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 		return info, err
 	}()
 	if err != nil {
+		if handleCloudAuthorizationError(err) {
+			return nil
+		}
 		return err
 	}
 
@@ -646,7 +727,13 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 
 		return generateInteractive(cmd, opts)
 	}
-	return generate(cmd, opts)
+	if err := generate(cmd, opts); err != nil {
+		if handleCloudAuthorizationError(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func SigninHandler(cmd *cobra.Command, args []string) error {
@@ -663,6 +750,7 @@ func SigninHandler(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 
 			if aErr.SigninURL != "" {
+				_ = browser.OpenURL(aErr.SigninURL)
 				fmt.Printf(ConnectInstructions, aErr.SigninURL)
 			}
 			return nil
@@ -1750,7 +1838,7 @@ func checkServerHeartbeat(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 		if err := startApp(cmd.Context(), client); err != nil {
-			return fmt.Errorf("ollama server not responding - %w", err)
+			return err
 		}
 	}
 	return nil
@@ -1791,6 +1879,144 @@ Environment Variables:
 	cmd.SetUsageTemplate(cmd.UsageTemplate() + envUsage)
 }
 
+// ensureServerRunning checks if the ollama server is running and starts it in the background if not.
+func ensureServerRunning(ctx context.Context) error {
+	client, err := api.ClientFromEnvironment()
+	if err != nil {
+		return err
+	}
+
+	// Check if server is already running
+	if err := client.Heartbeat(ctx); err == nil {
+		return nil // server is already running
+	}
+
+	// Server not running, start it in the background
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("could not find executable: %w", err)
+	}
+
+	serverCmd := exec.CommandContext(ctx, exe, "serve")
+	serverCmd.Env = os.Environ()
+	serverCmd.SysProcAttr = backgroundServerSysProcAttr()
+	if err := serverCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+
+	// Wait for the server to be ready
+	for {
+		time.Sleep(500 * time.Millisecond)
+		if err := client.Heartbeat(ctx); err == nil {
+			return nil // server has started
+		}
+	}
+}
+
+func launchInteractiveModel(cmd *cobra.Command, modelName string) error {
+	opts := runOptions{
+		Model:       modelName,
+		WordWrap:    os.Getenv("TERM") == "xterm-256color",
+		Options:     map[string]any{},
+		ShowConnect: true,
+	}
+	// loadOrUnloadModel is cloud-safe here: remote/cloud models skip local preload
+	// and only validate auth/connectivity before interactive chat starts.
+	if err := loadOrUnloadModel(cmd, &opts); err != nil {
+		return fmt.Errorf("error loading model: %w", err)
+	}
+	if err := generateInteractive(cmd, opts); err != nil {
+		return fmt.Errorf("error running model: %w", err)
+	}
+	return nil
+}
+
+// runInteractiveTUI runs the main interactive TUI menu.
+func runInteractiveTUI(cmd *cobra.Command) {
+	// Ensure the server is running before showing the TUI
+	if err := ensureServerRunning(cmd.Context()); err != nil {
+		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
+		return
+	}
+
+	deps := launcherDeps{
+		buildState:        launch.BuildLauncherState,
+		runMenu:           tui.RunMenu,
+		resolveRunModel:   launch.ResolveRunModel,
+		launchIntegration: launch.LaunchIntegration,
+		runModel:          launchInteractiveModel,
+	}
+
+	for {
+		continueLoop, err := runInteractiveTUIStep(cmd, deps)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
+		if !continueLoop {
+			return
+		}
+	}
+}
+
+type launcherDeps struct {
+	buildState        func(context.Context) (*launch.LauncherState, error)
+	runMenu           func(*launch.LauncherState) (tui.TUIAction, error)
+	resolveRunModel   func(context.Context, launch.RunModelRequest) (string, error)
+	launchIntegration func(context.Context, launch.IntegrationLaunchRequest) error
+	runModel          func(*cobra.Command, string) error
+}
+
+func runInteractiveTUIStep(cmd *cobra.Command, deps launcherDeps) (bool, error) {
+	state, err := deps.buildState(cmd.Context())
+	if err != nil {
+		return false, fmt.Errorf("build launcher state: %w", err)
+	}
+
+	action, err := deps.runMenu(state)
+	if err != nil {
+		return false, fmt.Errorf("run launcher menu: %w", err)
+	}
+
+	return runLauncherAction(cmd, action, deps)
+}
+
+func saveLauncherSelection(action tui.TUIAction) {
+	// Best effort only: this affects menu recall, not launch correctness.
+	_ = config.SetLastSelection(action.LastSelection())
+}
+
+func runLauncherAction(cmd *cobra.Command, action tui.TUIAction, deps launcherDeps) (bool, error) {
+	switch action.Kind {
+	case tui.TUIActionNone:
+		return false, nil
+	case tui.TUIActionRunModel:
+		saveLauncherSelection(action)
+		modelName, err := deps.resolveRunModel(cmd.Context(), action.RunModelRequest())
+		if errors.Is(err, launch.ErrCancelled) {
+			return true, nil
+		}
+		if err != nil {
+			return true, fmt.Errorf("selecting model: %w", err)
+		}
+		if err := deps.runModel(cmd, modelName); err != nil {
+			return true, err
+		}
+		return true, nil
+	case tui.TUIActionLaunchIntegration:
+		saveLauncherSelection(action)
+		err := deps.launchIntegration(cmd.Context(), action.IntegrationLaunchRequest())
+		if errors.Is(err, launch.ErrCancelled) {
+			return true, nil
+		}
+		if err != nil {
+			return true, fmt.Errorf("launching %s: %w", action.Integration, err)
+		}
+		return true, nil
+	default:
+		return false, fmt.Errorf("unknown launcher action: %d", action.Kind)
+	}
+}
+
 func NewCLI() *cobra.Command {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	cobra.EnableCommandSorting = false
@@ -1813,11 +2039,13 @@ func NewCLI() *cobra.Command {
 				return
 			}
 
-			cmd.Print(cmd.UsageString())
+			runInteractiveTUI(cmd)
 		},
 	}
 
 	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
+	rootCmd.Flags().Bool("verbose", false, "Show timings for response")
+	rootCmd.Flags().Bool("nowordwrap", false, "Don't wrap words to the next line automatically")
 
 	createCmd := &cobra.Command{
 		Use:   "create MODEL",
@@ -1877,6 +2105,9 @@ func NewCLI() *cobra.Command {
 	// Image generation flags (width, height, steps, seed, etc.)
 	imagegen.RegisterFlags(runCmd)
 
+	runCmd.Flags().Bool("imagegen", false, "Use the imagegen runner for LLM inference")
+	runCmd.Flags().MarkHidden("imagegen")
+
 	stopCmd := &cobra.Command{
 		Use:     "stop MODEL",
 		Short:   "Stop a running model",
@@ -1888,7 +2119,7 @@ func NewCLI() *cobra.Command {
 	serveCmd := &cobra.Command{
 		Use:     "serve",
 		Aliases: []string{"start"},
-		Short:   "Start ollama",
+		Short:   "Start Ollama",
 		Args:    cobra.ExactArgs(0),
 		RunE:    RunServer,
 	}
@@ -1921,9 +2152,27 @@ func NewCLI() *cobra.Command {
 		RunE:    SigninHandler,
 	}
 
+	loginCmd := &cobra.Command{
+		Use:     "login",
+		Short:   "Sign in to ollama.com",
+		Hidden:  true,
+		Args:    cobra.ExactArgs(0),
+		PreRunE: checkServerHeartbeat,
+		RunE:    SigninHandler,
+	}
+
 	signoutCmd := &cobra.Command{
 		Use:     "signout",
 		Short:   "Sign out from ollama.com",
+		Args:    cobra.ExactArgs(0),
+		PreRunE: checkServerHeartbeat,
+		RunE:    SignoutHandler,
+	}
+
+	logoutCmd := &cobra.Command{
+		Use:     "logout",
+		Short:   "Sign out from ollama.com",
+		Hidden:  true,
 		Args:    cobra.ExactArgs(0),
 		PreRunE: checkServerHeartbeat,
 		RunE:    SignoutHandler,
@@ -1991,7 +2240,7 @@ func NewCLI() *cobra.Command {
 		switch cmd {
 		case runCmd:
 			imagegen.AppendFlagsDocs(cmd)
-			appendEnvDocs(cmd, []envconfig.EnvVar{envVars["OLLAMA_HOST"], envVars["OLLAMA_NOHISTORY"]})
+			appendEnvDocs(cmd, []envconfig.EnvVar{envVars["OLLAMA_EDITOR"], envVars["OLLAMA_HOST"], envVars["OLLAMA_NOHISTORY"]})
 		case serveCmd:
 			appendEnvDocs(cmd, []envconfig.EnvVar{
 				envVars["OLLAMA_DEBUG"],
@@ -2002,6 +2251,7 @@ func NewCLI() *cobra.Command {
 				envVars["OLLAMA_MAX_QUEUE"],
 				envVars["OLLAMA_MODELS"],
 				envVars["OLLAMA_NUM_PARALLEL"],
+				envVars["OLLAMA_NO_CLOUD"],
 				envVars["OLLAMA_NOPRUNE"],
 				envVars["OLLAMA_ORIGINS"],
 				envVars["OLLAMA_SCHED_SPREAD"],
@@ -2025,13 +2275,15 @@ func NewCLI() *cobra.Command {
 		pullCmd,
 		pushCmd,
 		signinCmd,
+		loginCmd,
 		signoutCmd,
+		logoutCmd,
 		listCmd,
 		psCmd,
 		copyCmd,
 		deleteCmd,
 		runnerCmd,
-		config.LaunchCmd(checkServerHeartbeat),
+		launch.LaunchCmd(checkServerHeartbeat, runInteractiveTUI),
 	)
 
 	return rootCmd
