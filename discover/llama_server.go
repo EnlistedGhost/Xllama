@@ -22,7 +22,7 @@ import (
 
 // llamaServerDiscoveryWaitDelay bounds how long Wait can hang after we stop
 // the short-lived discovery subprocess.
-const llamaServerDiscoveryWaitDelay = 5 * time.Second
+const llamaServerDiscoveryWaitDelay = 15 * time.Second
 
 // llamaServerDiscoverDevices spawns llama-server briefly (without a model) to
 // discover GPU devices and their capabilities. The server prints device info
@@ -62,6 +62,7 @@ func llamaServerDiscoverDevices(ctx context.Context, libDirs []string, extraEnvs
 		"--no-webui",
 		"--offline",
 		"--verbose",
+		"--fit", "on",
 	)
 	cmd.WaitDelay = llamaServerDiscoveryWaitDelay
 	cmd.Env = os.Environ()

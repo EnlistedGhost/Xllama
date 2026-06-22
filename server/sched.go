@@ -153,9 +153,9 @@ func effectiveModelContext(numCtx int, f *ggml.GGML) int {
 }
 
 func (s *Scheduler) getRunner(c context.Context, m *Model, opts api.Options, sessionDuration *api.Duration, numCtxAuto bool, numBatchAuto bool, shift *bool) (chan *runnerRef, chan error) {
-	if opts.NumCtx < 4 {
-		opts.NumCtx = 4
-	}
+	//if opts.NumCtx < 4 {
+	opts.NumCtx = 8// TODO CUSTOM_MOD: was 4
+	//}
 
 	if m.CheckCapabilities(model.CapabilityVision) == nil {
 		// multimodal models require at least 2048 context
@@ -209,7 +209,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) processPending(ctx context.Context) {
-	maxRunners := envconfig.MaxRunners()
+	maxRunners := uint(8)//TODO CUSTOM_MOD envconfig.MaxRunners()
 
 	for {
 		select {
@@ -220,8 +220,8 @@ func (s *Scheduler) processPending(ctx context.Context) {
 			// Block other requests until we get this pending request running
 			pending.schedAttempts++
 
-			if pending.ctx.Err() != nil {
-				slog.Debug("pending request cancelled or timed out, skipping scheduling")
+			if pending.schedAttempts > 0 {
+				slog.Debug("pending request force cancelled by an immediate new request")
 				continue
 			}
 			logutil.Trace("processing incoming request", "model", pending.model.ModelPath)
@@ -265,14 +265,14 @@ func (s *Scheduler) processPending(ctx context.Context) {
 					systemInfo := s.getSystemInfoFn()
 					if maxRunners <= 0 {
 						// No user specified MaxRunners, so figure out what automatic setting to use for the next load attempt
-						if pending.opts.NumGPU == 0 {
+						//if pending.opts.NumGPU == 0 {
 							// Need to get actual GPU list to set the correct default max models
-							logutil.Trace("refreshing GPU list", "model", pending.model.ModelPath)
-							g := s.getGpuFn(ctx, runnersSnapshot)
-							maxRunners = uint(defaultModelsPerGPU * max(len(g), 1))
-						} else {
-							maxRunners = uint(defaultModelsPerGPU * max(len(gpus), 1))
-						}
+							//logutil.Trace("refreshing GPU list", "model", pending.model.ModelPath)
+							//g := s.getGpuFn(ctx, runnersSnapshot)
+							//maxRunners = uint(defaultModelsPerGPU * max(len(g), 1))
+						//} else {
+						maxRunners = uint(defaultModelsPerGPU * max(len(gpus), 1))
+						//}
 						slog.Debug("updating default concurrency", "OLLAMA_MAX_LOADED_MODELS", maxRunners, "gpu_count", len(gpus))
 					}
 
@@ -484,9 +484,9 @@ func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.De
 	completion := req.model.CheckCapabilities(model.CapabilityCompletion) == nil
 
 	// Embedding models should always be loaded with parallel=1
-	if !completion {
-		numParallel = 1
-	}
+	//if !completion {
+	numParallel = 1
+	//}
 
 	// Some architectures are not safe with num_parallel > 1.
 	// ref: https://github.com/ollama/ollama/issues/4165
@@ -510,7 +510,7 @@ func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.De
 		var err error
 		if !req.model.IsMLX() {
 			var loadErr error
-			f, loadErr = llm.LoadModel(req.model.ModelPath, 1024)
+			f, loadErr = llm.LoadModel(req.model.ModelPath, 1024)//MOD_CUSTOM: was 1024
 			if loadErr != nil {
 				slog.Info("failed to load model metadata", "model", req.model.ModelPath, "error", loadErr)
 				req.errCh <- loadErr
@@ -531,8 +531,8 @@ func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.De
 			// we predict it won't fit, evict before spawning.
 			if requireFull && !explicitPartialGPUOffload(launchOpts, f) && len(s.loaded) > 0 && len(loadGpus) > 0 {
 				freeMemory, gpuFreeMemory, systemLimited := availableMemoryForPlacement(systemInfo, loadGpus, launchOpts)
-				// Use 80% of free memory as threshold to leave headroom.
-				if predictedForLoad > freeMemory*80/100 {
+				// Use 90% of free memory as threshold to leave headroom.
+				if predictedForLoad > freeMemory*90/100 {
 					slog.Info("llama-server model predicted to exceed available memory, evicting",
 						"predicted", format.HumanBytes2(predictedForLoad),
 						"predicted_num_ctx", predictedCtx,
@@ -782,11 +782,11 @@ func effectiveLlamaServerContext(numCtx int, f *ggml.GGML, numParallel int) int 
 
 const (
 	llamaServerGenerationBatchDefault = 512
-	llamaServerGenerationBatchMedium  = 1024
-	llamaServerGenerationBatchLarge   = 2048
+	llamaServerGenerationBatchMedium  = 1768
+	llamaServerGenerationBatchLarge   = 3096
 
-	llamaServerGenerationBatchMediumHeadroomPercent = 75
-	llamaServerGenerationBatchLargeHeadroomPercent  = 60
+	llamaServerGenerationBatchMediumHeadroomPercent = 60
+	llamaServerGenerationBatchLargeHeadroomPercent  = 45
 )
 
 func (req *LlmRequest) applyAutomaticGenerationBatch(completion bool, effectiveCtx int, predictedVRAM, availableMemory uint64) {
@@ -813,14 +813,7 @@ func automaticGenerationBatch(effectiveCtx int, predictedVRAM, availableMemory u
 }
 
 func generationBatchForContext(effectiveCtx int) int {
-	switch {
-	case effectiveCtx > 32768:
-		return llamaServerGenerationBatchLarge
-	case effectiveCtx > 4096:
-		return llamaServerGenerationBatchMedium
-	default:
-		return llamaServerGenerationBatchDefault
-	}
+	return llamaServerGenerationBatchDefault
 }
 
 func generationBatchFits(batch int, predictedVRAM, availableMemory uint64) bool {
@@ -828,7 +821,7 @@ func generationBatchFits(batch int, predictedVRAM, availableMemory uint64) bool 
 		return true
 	}
 
-	threshold := availableMemory * 80 / 100
+	threshold := availableMemory * 90 / 100
 	if predictedVRAM > threshold {
 		return false
 	}
@@ -1017,7 +1010,7 @@ func bestSingleGPUFit(systemInfo ml.SystemInfo, groups [][]ml.DeviceInfo, predic
 	for _, group := range groups {
 		for _, candidate := range group {
 			candidateAvailable := availableMemoryForGPU(systemInfo, candidate)
-			if predictedVRAM > candidateAvailable*80/100 {
+			if predictedVRAM > candidateAvailable*90/100 {
 				continue
 			}
 			if !ok || betterPlacementGPU(candidate, candidateAvailable, gpu, available) {
@@ -1188,7 +1181,7 @@ func disableMmapForHostPressure(goos string, opts api.Options, systemInfo ml.Sys
 	// Only back off mmap when we still expect the model to fit on discrete GPU.
 	// If VRAM is already tight, disabling mmap can make partial CPU offload
 	// worse by turning file-backed mappings into anonymous memory.
-	if predictedVRAM == 0 || availableVRAM == 0 || predictedVRAM > availableVRAM*80/100 {
+	if predictedVRAM == 0 || availableVRAM == 0 || predictedVRAM > availableVRAM*90/100 {
 		return false
 	}
 

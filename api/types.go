@@ -1094,13 +1094,14 @@ func DefaultOptions() Options {
 		NumPredict: -1,
 
 		// set a minimal num_keep to avoid issues on context shifts
-		NumKeep:          4,
-		Temperature:      0.8,
-		TopK:             40,
-		TopP:             0.9,
+		NumKeep:          0,
+		Temperature:      1.25,
+		TopK:             95,
+		TopP:             0.7905,
+		MinP:			  0.5207,
 		TypicalP:         1.0,
-		RepeatLastN:      64,
-		RepeatPenalty:    1.1,
+		RepeatLastN:      52,
+		RepeatPenalty:    1.098,
 		PresencePenalty:  0.0,
 		FrequencyPenalty: 0.0,
 		Seed:             -1,
@@ -1108,10 +1109,10 @@ func DefaultOptions() Options {
 		Runner: Runner{
 			// options set when the model is loaded
 			NumCtx:          int(envconfig.ContextLength()),
-			NumBatch:        512,
+			NumBatch:        1024,
 			NumGPU:          -1, // -1 here indicates that NumGPU should be set dynamically
 			NumThread:       0,  // let the runtime decide
-			DraftNumPredict: 4,
+			DraftNumPredict: 0,
 			UseMMap:         nil,
 		},
 	}

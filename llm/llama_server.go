@@ -72,7 +72,7 @@ ws ::= ([ \t\n] ws)?
 // DefaultEmbeddingNumBatch is the default NumBatch used for embedding models
 // when neither the model nor the request specifies num_batch.
 const (
-	DefaultEmbeddingNumBatch             = 2048
+	DefaultEmbeddingNumBatch             = 1024
 	openEndedGenerationContextMultiplier = 10
 )
 
@@ -301,7 +301,7 @@ func startLlamaServer(launch llamaServerLaunchConfig, out io.Writer) (cmd *exec.
 	}
 
 	// Allocate a port
-	port = 0
+	port = 9229
 	if a, err := net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
 		var l *net.TCPListener
 		if l, err = net.ListenTCP("tcp", a); err == nil {
@@ -311,7 +311,7 @@ func startLlamaServer(launch llamaServerLaunchConfig, out io.Writer) (cmd *exec.
 	}
 	if port == 0 {
 		slog.Debug("ResolveTCPAddr failed, using random port")
-		port = rand.Intn(65535-49152) + 49152
+		port = 9229
 	}
 
 	// Build CLI flags — minimal set, let llama-server auto-detect the rest
@@ -319,8 +319,20 @@ func startLlamaServer(launch llamaServerLaunchConfig, out io.Writer) (cmd *exec.
 		"--model", launch.modelPath,
 		"--port", strconv.Itoa(port),
 		"--host", "127.0.0.1",
+		"--cache-ram", "0",
 		"--no-webui",
 		"--offline",
+		"--no-warmup",
+		"--no-repack",
+		"--spec-draft-n-max", "0",
+		"--swa-checkpoints", "0",
+		"--reasoning-budget", "-1",
+		"--predict", "-1",
+		"--keep", "0",
+		"--no-kv-unified",
+		"--no-context-shift",
+		"--sleep-idle-seconds", "-1",
+		"--slot-prompt-similarity", "0.0",
 		"-c", strconv.Itoa(launch.opts.NumCtx * launch.numParallel),
 		"-np", strconv.Itoa(launch.numParallel),
 	}
@@ -338,9 +350,9 @@ func startLlamaServer(launch llamaServerLaunchConfig, out io.Writer) (cmd *exec.
 	}
 
 	// UseMmap
-	if launch.opts.UseMMap != nil && !*launch.opts.UseMMap {
+	//if launch.opts.UseMMap != nil && !*launch.opts.UseMMap {
 		params = append(params, "--no-mmap")
-	}
+	//}
 
 	// KV cache type
 	if launch.kvCacheType != "" {
@@ -630,46 +642,21 @@ func appendJinjaArgs(params []string, config LlamaServerConfig) []string {
 }
 
 func appendContextShiftArgs(params []string, opts api.Options, enabled bool) []string {
-	if !enabled {
-		return params
-	}
-
-	params = append(params, "--context-shift")
-	if opts.NumKeep > 0 {
-		params = append(params, "--keep", strconv.Itoa(opts.NumKeep))
-	}
-
 	return params
 }
 
 func appendMTPDraftArgs(params []string, config LlamaServerConfig, opts api.Options) []string {
-	if !config.EnableMTP && config.DraftModelPath == "" {
-		return params
-	}
-	if opts.DraftNumPredict <= 0 {
-		return params
-	}
-
-	params = append(params, "--spec-type", "draft-mtp")
-	params = append(params, "--spec-draft-n-max", strconv.Itoa(opts.DraftNumPredict))
-	params = append(params, "--spec-draft-backend-sampling")
-	if config.DraftModelPath != "" {
-		params = append(params, "--spec-draft-model", config.DraftModelPath)
-	}
 	return params
 }
 
 func hasMTPDraft(f *ggml.GGML) bool {
-	if f.KV().Uint("nextn_predict_layers") > 0 {
-		return true
-	}
-	return hasLegacyQwenMTPDraft(f.KV().Architecture(), f.Tensors().Items("mtp."))
+		return false
 }
 
 func hasLegacyQwenMTPDraft(arch string, tensors []*ggml.Tensor) bool {
 	switch arch {
 	case "qwen35", "qwen35moe":
-		return len(tensors) > 0
+		return false
 	default:
 		return false
 	}
@@ -720,7 +707,7 @@ func NewLlamaServerRunner(
 		projectors = []string{modelPath}
 	}
 	if config.DraftModelPath == "" && hasMTPDraft(f) {
-		config.EnableMTP = true
+		config.EnableMTP = false
 	}
 
 	gpuLibs := ml.LibraryPaths(gpus)
@@ -818,7 +805,7 @@ func qwenVLServerArgs(modelArch string) []string {
 	case "qwen2vl", "qwen25vl", "qwen3vl", "qwen3vlmoe":
 		// Upstream mtmd warns that Qwen-VL needs at least 1024 image tokens for
 		// correct grounding/counting behavior; the GGUF metadata default is too low.
-		return []string{"--image-min-tokens", "1024"}
+		return []string{"--image-min-tokens", "4096"}
 	default:
 		return nil
 	}
