@@ -4,6 +4,7 @@ title: Hardware support
 
 ## Nvidia
 Ollama supports Nvidia GPUs with compute capability 5.0+ and driver version 531 and newer.
+Nvidia GPUs with compute capability 5.0 through 6.2 require driver version 570 or newer.
 
 Check your compute compatibility to see if your card is supported:
 [https://developer.nvidia.com/cuda-gpus](https://developer.nvidia.com/cuda-gpus)
@@ -61,6 +62,10 @@ Ollama supports the following AMD GPUs via the ROCm library:
 
 ### Linux Support
 
+Ollama requires the AMD ROCm v7 driver on Linux. You can install or upgrade
+using the `amdgpu-install` utility from
+[AMD's ROCm documentation](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/).
+
 | Family         | Cards and accelerators                                                                                                                                         |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AMD Radeon RX  | `9070 XT` `9070 GRE` `9070` `9060 XT` `9060 XT LP` `9060` `7900 XTX` `7900 XT` `7900 GRE` `7800 XT` `7700 XT` `7700` `7600 XT` `7600` `6950 XT` `6900 XTX` `6900XT` `6800 XT` `6800` `5700 XT` `5700` `5600 XT` `5500 XT` |
@@ -71,7 +76,7 @@ Ollama supports the following AMD GPUs via the ROCm library:
 
 ### Windows Support
 
-With ROCm v6.1, the following GPUs are supported on Windows.
+Ollama requires an AMD ROCm v7 / HIP7-capable driver stack on Windows.
 
 | Family         | Cards and accelerators                                                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -138,12 +143,9 @@ Ollama supports GPU acceleration on Apple devices via the Metal API.
 
 ## Vulkan GPU Support
 
-> **NOTE:**
-> Vulkan is currently an Experimental feature.  To enable, you must set OLLAMA_VULKAN=1 for the Ollama server as
-described in the [FAQ](faq#how-do-i-configure-ollama-server)
-
 Additional GPU support on Windows and Linux is provided via
-[Vulkan](https://www.vulkan.org/). On Windows most GPU vendors drivers come
+[Vulkan](https://www.vulkan.org/). Vulkan is enabled by default when the
+backend is installed. On Windows most GPU vendors drivers come
 bundled with Vulkan support and require no additional setup steps. Most Linux
 distributions require installing additional components, and you may have
 multiple options for Vulkan drivers between Mesa and GPU Vendor specific packages
@@ -169,4 +171,9 @@ To select specific Vulkan GPU(s), you can set the environment variable
 `GGML_VK_VISIBLE_DEVICES` to one or more numeric IDs on the Ollama server as
 described in the [FAQ](faq#how-do-i-configure-ollama-server). If you
 encounter any problems with Vulkan based GPUs, you can disable all Vulkan GPUs
-by setting `GGML_VK_VISIBLE_DEVICES=-1` 
+by setting `OLLAMA_VULKAN=0` or `GGML_VK_VISIBLE_DEVICES=-1`.
+
+On mixed iGPU/dGPU systems where the Vulkan iGPU is unstable, keep Vulkan
+enabled and set `GGML_VK_VISIBLE_DEVICES` to the discrete GPU index. For
+example, use `GGML_VK_VISIBLE_DEVICES=1` when `Vulkan1` is the discrete
+GPU.
