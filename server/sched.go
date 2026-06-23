@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"strconv"
 	"sync"
 	"time"
 
@@ -153,9 +155,9 @@ func effectiveModelContext(numCtx int, f *ggml.GGML) int {
 }
 
 func (s *Scheduler) getRunner(c context.Context, m *Model, opts api.Options, sessionDuration *api.Duration, numCtxAuto bool, numBatchAuto bool, shift *bool) (chan *runnerRef, chan error) {
-	//if opts.NumCtx < 4 {
-	opts.NumCtx = 8// TODO CUSTOM_MOD: was 4
-	//}
+	if opts.NumCtx < 10 {
+		opts.NumCtx = 10
+	}
 
 	if m.CheckCapabilities(model.CapabilityVision) == nil {
 		// multimodal models require at least 2048 context
@@ -217,10 +219,10 @@ func (s *Scheduler) processPending(ctx context.Context) {
 			slog.Debug("shutting down scheduler pending loop")
 			return
 		case pending := <-s.pendingReqCh:
-			// Block other requests until we get this pending request running
+			// Count stacking requests
 			pending.schedAttempts++
-
-			if pending.schedAttempts > 0 {
+			// It's vexing to wait on stacked requests, cull one and run the next request
+			if pending.schedAttempts > 1 {
 				slog.Debug("pending request force cancelled by an immediate new request")
 				continue
 			}
@@ -265,14 +267,14 @@ func (s *Scheduler) processPending(ctx context.Context) {
 					systemInfo := s.getSystemInfoFn()
 					if maxRunners <= 0 {
 						// No user specified MaxRunners, so figure out what automatic setting to use for the next load attempt
-						//if pending.opts.NumGPU == 0 {
+						if pending.opts.NumGPU == 0 {
 							// Need to get actual GPU list to set the correct default max models
-							//logutil.Trace("refreshing GPU list", "model", pending.model.ModelPath)
-							//g := s.getGpuFn(ctx, runnersSnapshot)
-							//maxRunners = uint(defaultModelsPerGPU * max(len(g), 1))
-						//} else {
+							logutil.Trace("refreshing GPU list", "model", pending.model.ModelPath)
+							g := s.getGpuFn(ctx, runnersSnapshot)
+							maxRunners = uint(defaultModelsPerGPU * max(len(g), 1))
+						} else {
 						maxRunners = uint(defaultModelsPerGPU * max(len(gpus), 1))
-						//}
+						}
 						slog.Debug("updating default concurrency", "OLLAMA_MAX_LOADED_MODELS", maxRunners, "gpu_count", len(gpus))
 					}
 
@@ -477,23 +479,34 @@ func (pending *LlmRequest) useLoadedRunner(runner *runnerRef, finished chan *Llm
 	}()
 }
 
+func readSchedLoaderBatchNumConfig(batchLoaderNumPath string) (int, error) {
+	// Read entire file into byte slice
+	batchConfigForLoader, err := os.ReadFile(batchLoaderNumPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Convert bytes to string (trim whitespace and newlines)
+	batchNumForLoader := strings.TrimSpace(string(batchConfigForLoader))
+
+	// Convert string to integer
+	numLoaderBatch, err := strconv.Atoi(batchNumForLoader)
+	if err != nil {
+		return 0, fmt.Errorf("error converting configured loader batch size str to num")
+	}
+
+	return numLoaderBatch, nil
+}
+
 // load creates a new model based on req and loads it. If requireFull is true then the model must be loaded fully onto GPUs
 // (if any). Returns whether the scheduler needs to evict a model to make this one fit.
 func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.DeviceInfo, requireFull bool) bool {
-	numParallel := max(int(envconfig.NumParallel()), 1)
+	//numParallel := max(int(envconfig.NumParallel()), 1)
 	completion := req.model.CheckCapabilities(model.CapabilityCompletion) == nil
 
-	// Embedding models should always be loaded with parallel=1
-	//if !completion {
-	numParallel = 1
-	//}
-
-	// Some architectures are not safe with num_parallel > 1.
-	// ref: https://github.com/ollama/ollama/issues/4165
-	if slices.Contains([]string{"mllama", "qwen3vl", "qwen3vlmoe", "qwen35", "qwen35moe", "qwen3next", "lfm2", "lfm2moe", "nemotron_h", "nemotron_h_moe", "nemotron_h_omni"}, req.model.Config.ModelFamily) && numParallel != 1 {
-		numParallel = 1
-		slog.Warn("model architecture does not currently support parallel requests", "architecture", req.model.Config.ModelFamily)
-	}
+	// Always load with parallel=1 
+	// (Is the resource use worth the negligible gains?)
+	numParallel := 1
 
 	sessionDuration := envconfig.KeepAlive()
 	if req.sessionDuration != nil {
@@ -509,8 +522,15 @@ func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.De
 	if llama == nil {
 		var err error
 		if !req.model.IsMLX() {
+			// Fetch loader batch num from config file
+			LoaderBatchNum, err := readSchedLoaderBatchNumConfig("/home/theta/.ollama/ollamaloader.conf")
+			if err != nil {
+				log.Fatalf("error %v", err)
+			} else {
+				fmt.Printf("Fetched configured loader batch number: %d\n", LoaderBatchNum)
+			}
 			var loadErr error
-			f, loadErr = llm.LoadModel(req.model.ModelPath, 1024)//MOD_CUSTOM: was 1024
+			f, loadErr = llm.LoadModel(req.model.ModelPath, LoaderBatchNum)//MOD_CUSTOM: was 1024
 			if loadErr != nil {
 				slog.Info("failed to load model metadata", "model", req.model.ModelPath, "error", loadErr)
 				req.errCh <- loadErr

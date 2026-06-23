@@ -1854,7 +1854,7 @@ func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	r.POST("/api/copy", s.CopyHandler)
 	r.POST("/api/experimental/web_search", s.WebSearchExperimentalHandler)
 	r.POST("/api/experimental/web_fetch", s.WebFetchExperimentalHandler)
-	r.GET("/api/experimental/model-recommendations", s.ModelRecommendationsExperimentalHandler)
+	//r.GET("/api/experimental/model-recommendations", s.ModelRecommendationsExperimentalHandler)
 
 	// Inference
 	r.GET("/api/ps", s.PsHandler)
@@ -1894,24 +1894,6 @@ func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	}
 
 	return r, nil
-}
-
-func (s *Server) ModelRecommendationsExperimentalHandler(c *gin.Context) {
-	recs := defaultModelRecommendations
-	source := "default"
-	if s.modelCaches != nil && s.modelCaches.recommendations != nil {
-		ctx := context.Background()
-		if c.Request != nil {
-			ctx = c.Request.Context()
-		}
-		recs = s.modelCaches.recommendations.GetSWR(ctx)
-		source = "cache"
-	}
-
-	slog.Debug("serving model recommendations", "recommendation_source", source, "count", len(recs))
-	c.JSON(http.StatusOK, api.ModelRecommendationsResponse{
-		Recommendations: recs,
-	})
 }
 
 func Serve(ln net.Listener) error {
