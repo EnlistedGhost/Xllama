@@ -11,7 +11,7 @@
 
 
 ## Welcome!
-Thank you for taking the time to read this documentation of Xllama! 
+Thank you for taking the time to read this documentation of Xllama! <br />
 Xllama is a fork of Ollama that is geared directly for "no frills" and "extreme privacy". 
 
 Currently, Ollama has many back-door connections, hidden remote servers, and many other aspects of the system that are far from "local only" model running. Xllama (stands for Ex-Ollama) aims to remedy this farce that Ollama peddles to their users.
