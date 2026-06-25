@@ -17,36 +17,6 @@ xllama
 
 You'll be prompted to run a model or connect xllama to your existing agents or applications such as `Claude Code`, `OpenClaw`, `OpenCode` , `Codex`, `Copilot`,  and more.
 
-### Coding
-
-To launch a specific integration:
-
-```
-xllama launch claude
-```
-
-Supported integrations include [Claude Code](https://docs.xllama.com/integrations/claude-code), [Codex](https://docs.xllama.com/integrations/codex), [Copilot CLI](https://docs.xllama.com/integrations/copilot-cli), [Droid](https://docs.xllama.com/integrations/droid), and [OpenCode](https://docs.xllama.com/integrations/opencode).
-
-### AI assistant
-
-Use [OpenClaw](https://docs.xllama.com/integrations/openclaw) to turn xllama into a personal AI assistant across WhatsApp, Telegram, Slack, Discord, and more:
-
-```
-xllama launch openclaw
-```
-
-### Chat with a model
-
-Run and chat with [Gemma 3](https://xllama.com/library/gemma3):
-
-```
-xllama run gemma3
-```
-
-See [xllama.com/library](https://xllama.com/library) for the full list.
-
-See the [quickstart guide](https://docs.xllama.com/quickstart) for more details.
-
 ## REST API
 
 xllama has a REST API for running and managing models.
