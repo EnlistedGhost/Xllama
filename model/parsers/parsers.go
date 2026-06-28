@@ -6,12 +6,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/ollama/ollama/api"
-	"github.com/ollama/ollama/harmony"
 )
 
 type Parser interface {
 	// Init initializes the parser with tools, optional last message for chat prefill, and think value
-	// Returns processed tools if the parser needs to modify them (e.g., harmony renames them)
+	// Returns processed tools if the parser needs to modify them 
 	Init(tools []api.Tool, lastMessage *api.Message, thinkValue *api.ThinkValue) []api.Tool
 	// Add processes streamed content and returns parsed content, thinking, and tool calls
 	// The done flag indicates if this is the last chunk (used for draining accumulators)
@@ -64,8 +63,6 @@ func ParserForName(name string) Parser {
 		p = &MinistralParser{hasThinkingSupport: false}
 	case "passthrough":
 		return &PassthroughParser{}
-	case "harmony":
-		return harmony.NewHarmonyMessageHandler()
 	case "cogito":
 		return &CogitoParser{}
 	case "deepseek3":

@@ -41,7 +41,6 @@ import (
 	"github.com/ollama/ollama/llm"
 	"github.com/ollama/ollama/logutil"
 	"github.com/ollama/ollama/manifest"
-	"github.com/ollama/ollama/middleware"
 	"github.com/ollama/ollama/model/parsers"
 	"github.com/ollama/ollama/model/renderers"
 	"github.com/ollama/ollama/server/internal/client/ollama"
@@ -1753,44 +1752,6 @@ func allowedHost(host string) bool {
 	return false
 }
 
-func allowedHostsMiddleware(addr net.Addr) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if addr == nil {
-			c.Next()
-			return
-		}
-
-		if addr, err := netip.ParseAddrPort(addr.String()); err == nil && !addr.Addr().IsLoopback() {
-			c.Next()
-			return
-		}
-
-		host, _, err := net.SplitHostPort(c.Request.Host)
-		if err != nil {
-			host = c.Request.Host
-		}
-
-		if addr, err := netip.ParseAddr(host); err == nil {
-			if addr.IsLoopback() || addr.IsPrivate() || addr.IsUnspecified() || isLocalIP(addr) {
-				c.Next()
-				return
-			}
-		}
-
-		if allowedHost(host) {
-			if c.Request.Method == http.MethodOptions {
-				c.AbortWithStatus(http.StatusNoContent)
-				return
-			}
-
-			c.Next()
-			return
-		}
-
-		c.AbortWithStatus(http.StatusForbidden)
-	}
-}
-
 func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowWildcard = true
@@ -1823,7 +1784,6 @@ func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	r.HandleMethodNotAllowed = true
 	r.Use(
 		cors.New(corsConfig),
-		allowedHostsMiddleware(s.addr),
 	)
 
 	// General
@@ -1863,29 +1823,11 @@ func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	r.POST("/api/embed", s.EmbedHandler)
 	r.POST("/api/embeddings", s.EmbeddingsHandler)
 
-	// Inference (OpenAI compatibility)
-	// TODO(cloud-stage-a): apply Modelfile overlay deltas for local models with cloud
-	// parents on v1 request families while preserving this explicit :cloud passthrough.
-	r.POST("/v1/chat/completions", s.withInferenceRequestLogging("/v1/chat/completions", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.ChatMiddleware(), s.ChatHandler)...)
-	r.POST("/v1/completions", s.withInferenceRequestLogging("/v1/completions", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.CompletionsMiddleware(), s.GenerateHandler)...)
-	r.POST("/v1/embeddings", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.EmbeddingsMiddleware(), s.EmbedHandler)
-	r.GET("/v1/models", middleware.ListMiddleware(), s.ListHandler)
-	r.GET("/v1/models/:model", cloudModelPathPassthroughMiddleware(cloudErrRemoteModelDetailsUnavailable), middleware.RetrieveMiddleware(), s.ShowHandler)
-	r.POST("/v1/responses", s.withInferenceRequestLogging("/v1/responses", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.ResponsesMiddleware(), s.ChatHandler)...)
-	// OpenAI-compatible image generation endpoints
-	r.POST("/v1/images/generations", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.ImageGenerationsMiddleware(), s.GenerateHandler)
-	r.POST("/v1/images/edits", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.ImageEditsMiddleware(), s.GenerateHandler)
-	// OpenAI-compatible audio endpoint
-	r.POST("/v1/audio/transcriptions", middleware.TranscriptionMiddleware(), s.ChatHandler)
-
-	// Inference (Anthropic compatibility)
-	r.POST("/v1/messages", s.withInferenceRequestLogging("/v1/messages", cloudPassthroughMiddleware(cloudErrRemoteInferenceUnavailable), middleware.AnthropicMessagesMiddleware(), s.ChatHandler)...)
-
 	if rc != nil {
 		// wrap old with new
 		rs := &registry.Local{
 			Client:   rc,
-			Logger:   slog.Default(), // TODO(bmizerany): Take a logger, do not use slog.Default()
+			Logger:   slog.Default(),
 			Fallback: r,
 
 			Prune: PruneLayers,
@@ -1964,12 +1906,6 @@ func Serve(ln net.Listener) error {
 	srvr := &http.Server{
 		// Use http.DefaultServeMux so we get net/http/pprof for
 		// free.
-		//
-		// TODO(bmizerany): Decide if we want to make this
-		// configurable so it is not exposed by default, or allow
-		// users to bind it to a different port. This was a quick
-		// and easy way to get pprof, but it may not be the best
-		// way.
 		Handler: nil,
 	}
 

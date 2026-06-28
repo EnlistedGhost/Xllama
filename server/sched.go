@@ -523,7 +523,7 @@ func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.De
 		var err error
 		if !req.model.IsMLX() {
 			// Fetch loader batch num from config file
-			LoaderBatchNum, err := readSchedLoaderBatchNumConfig("/home/theta/.ollama/ollamaloader.conf")
+			LoaderBatchNum, err := readSchedLoaderBatchNumConfig("/home/sera/.ollama/ollamaloader.conf")
 			if err != nil {
 				log.Fatalf("error %v", err)
 			} else {
