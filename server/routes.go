@@ -1823,6 +1823,10 @@ func (s *Server) GenerateRoutes(rc *ollama.Registry) (http.Handler, error) {
 	r.POST("/api/embed", s.EmbedHandler)
 	r.POST("/api/embeddings", s.EmbeddingsHandler)
 
+	//Stop
+	r.POST("/api/stop", s.StopModelHandler)
+	r.POST("/api/stop/all", s.StopAllModelsHandler)
+
 	if rc != nil {
 		// wrap old with new
 		rs := &registry.Local{

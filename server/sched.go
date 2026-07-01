@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"path/filepath"
 
 	"github.com/ollama/ollama/api"
 	"github.com/ollama/ollama/discover"
@@ -221,13 +222,7 @@ func (s *Scheduler) processPending(ctx context.Context) {
 		case pending := <-s.pendingReqCh:
 			// Count stacking requests
 			pending.schedAttempts++
-			// It's vexing to wait on stacked requests, cull one and run the next request
-			if pending.schedAttempts > 1 {
-				slog.Debug("pending request force cancelled by an immediate new request")
-				continue
-			}
 			logutil.Trace("processing incoming request", "model", pending.model.ModelPath)
-
 			for {
 				var runnerToExpire *runnerRef
 				pendingKey := schedulerModelKey(pending.model)
@@ -239,7 +234,6 @@ func (s *Scheduler) processPending(ctx context.Context) {
 					runnersSnapshot = append(runnersSnapshot, r)
 				}
 				s.loadedMu.Unlock()
-
 				if runner != nil {
 					if runner.needsReload(ctx, pending) {
 						slog.Debug("reloading", "runner", runner)
@@ -253,6 +247,22 @@ func (s *Scheduler) processPending(ctx context.Context) {
 				} else if maxRunners > 0 && loadedCount >= int(maxRunners) {
 					slog.Debug("max runners achieved, unloading one to make room", "runner_count", loadedCount)
 					runnerToExpire = s.findRunnerToUnload()
+				} else if pending.schedAttempts > 1 {
+					slog.Debug("queued runner found, unloading now scheduled for current runner!")
+					// Trigger an expiration to unload once it's done
+					runnerToExpire.refMu.Lock()
+					slog.Debug("setting current runner to expire immediately for queued runner", "runner", runnerToExpire, "refCount", runnerToExpire.refCount)
+					if runnerToExpire.expireTimer != nil {
+						runnerToExpire.expireTimer.Stop()
+						runnerToExpire.expireTimer = nil
+					}
+					runnerToExpire.sessionDuration = 0
+					if runnerToExpire.refCount <= 0 {
+						s.expiredCh <- runnerToExpire
+					}
+					runnerToExpire.refMu.Unlock()
+					// Wait for the unload to happen
+					slog.Debug("current runner waiting for queued runner to finish prior to loading", runnerToExpire)
 				} else {
 					// Either no models are loaded or below envconfig.MaxRunners
 					// Get a refreshed GPU list
@@ -479,6 +489,21 @@ func (pending *LlmRequest) useLoadedRunner(runner *runnerRef, finished chan *Llm
 	}()
 }
 
+func getPathBatchNumConfig() (string, error) {
+	// 1. Get the dynamic home directory path
+	homeUserDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Error no such directory found: %v", err)
+	}
+
+	// 2. Safely join the home directory with the .ollama folder
+	ollamaPath := filepath.Join(homeUserDir, ".ollama")
+	fmt.Println("Xllama directory:", ollamaPath)
+	
+	pathSchedBatchNumConfig := filepath.Join(ollamaPath, "ollamaloader.json")
+	return pathSchedBatchNumConfig, err
+}
+
 func readSchedLoaderBatchNumConfig(batchLoaderNumPath string) (int, error) {
 	// Read entire file into byte slice
 	batchConfigForLoader, err := os.ReadFile(batchLoaderNumPath)
@@ -495,7 +520,7 @@ func readSchedLoaderBatchNumConfig(batchLoaderNumPath string) (int, error) {
 		return 0, fmt.Errorf("error converting configured loader batch size str to num")
 	}
 
-	return numLoaderBatch, nil
+	return numLoaderBatch, err
 }
 
 // load creates a new model based on req and loads it. If requireFull is true then the model must be loaded fully onto GPUs
@@ -522,15 +547,24 @@ func (s *Scheduler) load(req *LlmRequest, systemInfo ml.SystemInfo, gpus []ml.De
 	if llama == nil {
 		var err error
 		if !req.model.IsMLX() {
-			// Fetch loader batch num from config file
-			LoaderBatchNum, err := readSchedLoaderBatchNumConfig("/home/sera/.ollama/ollamaloader.conf")
+			// Get path batch num config file
+			pathBatchNumConfig, err := getPathBatchNumConfig()
 			if err != nil {
 				log.Fatalf("error %v", err)
+				return false
+			} else {
+				fmt.Printf("Fetched configured loader batch number: %s\n", pathBatchNumConfig)
+			}
+			// Fetch loader batch num from config file
+			LoaderBatchNum, err := readSchedLoaderBatchNumConfig(pathBatchNumConfig)
+			if err != nil {
+				log.Fatalf("error %v", err)
+				return false
 			} else {
 				fmt.Printf("Fetched configured loader batch number: %d\n", LoaderBatchNum)
 			}
 			var loadErr error
-			f, loadErr = llm.LoadModel(req.model.ModelPath, LoaderBatchNum)//MOD_CUSTOM: was 1024
+			f, loadErr = llm.LoadModel(req.model.ModelPath, LoaderBatchNum)
 			if loadErr != nil {
 				slog.Info("failed to load model metadata", "model", req.model.ModelPath, "error", loadErr)
 				req.errCh <- loadErr
